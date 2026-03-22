@@ -1,0 +1,292 @@
+"""
+Job manager for the Imoova Holiday Optimizer backend.
+Manages search jobs in-memory with WebSocket notification support.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import time
+import uuid
+from datetime import date
+from typing import Any, Dict, List, Optional, Set
+
+from fastapi import WebSocket
+
+import config
+from models import SearchRequest
+from scraper import scrape_all_deals, filter_deals, ScrapingError
+from flights import (
+    search_flights_for_deal,
+    presearch_unique_routes,
+    close_browser,
+)
+
+logger = logging.getLogger(__name__)
+
+# ── In-memory job store ───────────────────────────────────────
+_jobs: Dict[str, Dict[str, Any]] = {}
+_job_websockets: Dict[str, Set[WebSocket]] = {}
+JOB_EXPIRY_SECONDS = 3600  # 1 hour
+
+
+def create_job(request: SearchRequest) -> str:
+    """Create a new job and return its ID."""
+    job_id = uuid.uuid4().hex[:12]
+    _jobs[job_id] = {
+        "id": job_id,
+        "request": request,
+        "status": "queued",
+        "message": "Queued",
+        "total_deals": 0,
+        "searched_deals": 0,
+        "total_routes": 0,
+        "searched_routes": 0,
+        "results": [],
+        "complete_results": 0,
+        "created_at": time.time(),
+        "error": None,
+    }
+    _job_websockets[job_id] = set()
+    return job_id
+
+
+def get_job(job_id: str) -> Optional[Dict[str, Any]]:
+    """Get a job by ID, or None if not found / expired."""
+    job = _jobs.get(job_id)
+    if job is None:
+        return None
+    if time.time() - job["created_at"] > JOB_EXPIRY_SECONDS:
+        _cleanup_job(job_id)
+        return None
+    return job
+
+
+def get_job_results(job_id: str) -> Optional[List[Dict[str, Any]]]:
+    """Get results for a job."""
+    job = get_job(job_id)
+    if job is None:
+        return None
+    return job["results"]
+
+
+def register_websocket(job_id: str, ws: WebSocket) -> None:
+    """Register a WebSocket connection for a job."""
+    if job_id not in _job_websockets:
+        _job_websockets[job_id] = set()
+    _job_websockets[job_id].add(ws)
+
+
+def unregister_websocket(job_id: str, ws: WebSocket) -> None:
+    """Remove a WebSocket connection for a job."""
+    if job_id in _job_websockets:
+        _job_websockets[job_id].discard(ws)
+
+
+async def _notify(job_id: str, message: Dict[str, Any]) -> None:
+    """Send a JSON message to all connected WebSockets for a job."""
+    if job_id not in _job_websockets:
+        return
+
+    dead: List[WebSocket] = []
+    for ws in _job_websockets[job_id]:
+        try:
+            await ws.send_json(message)
+        except Exception:
+            dead.append(ws)
+
+    for ws in dead:
+        _job_websockets[job_id].discard(ws)
+
+
+def _cleanup_job(job_id: str) -> None:
+    """Remove an expired job."""
+    _jobs.pop(job_id, None)
+    _job_websockets.pop(job_id, None)
+
+
+def cleanup_expired_jobs() -> int:
+    """Remove all expired jobs. Returns count of removed jobs."""
+    now = time.time()
+    expired = [
+        jid
+        for jid, job in _jobs.items()
+        if now - job["created_at"] > JOB_EXPIRY_SECONDS
+    ]
+    for jid in expired:
+        _cleanup_job(jid)
+    return len(expired)
+
+
+async def run_job(job_id: str) -> None:
+    """
+    Main job pipeline:
+    1. Scrape Imoova deals
+    2. Filter by user params
+    3. Pre-search unique flight routes
+    4. Enrich each deal with flight data
+    5. Push results via WebSocket as they come in
+    """
+    job = _jobs.get(job_id)
+    if job is None:
+        return
+
+    request: SearchRequest = job["request"]
+
+    try:
+        # ── Step 1: Scrape Imoova ─────────────────────────────
+        job["status"] = "scraping"
+        job["message"] = "Scraping Imoova deals..."
+        await _notify(job_id, {
+            "type": "status",
+            "step": "scraping",
+            "message": "Scraping Imoova deals...",
+        })
+
+        raw_deals = await scrape_all_deals()
+        logger.info("Scraped %d raw deals", len(raw_deals))
+
+        # ── Step 2: Filter deals ──────────────────────────────
+        job["status"] = "filtering"
+        earliest = date.fromisoformat(request.earliest_departure)
+        latest = date.fromisoformat(request.latest_return)
+
+        filtered = filter_deals(
+            raw_deals,
+            earliest_departure=earliest,
+            latest_return=latest,
+            min_days=request.min_days,
+            max_days=request.max_days,
+            min_seats=request.min_seats,
+        )
+
+        job["total_deals"] = len(filtered)
+        filter_msg = f"Found {len(raw_deals)} deals, {len(filtered)} match your dates"
+        job["message"] = filter_msg
+        await _notify(job_id, {
+            "type": "status",
+            "step": "filtering",
+            "message": filter_msg,
+        })
+
+        if not filtered:
+            job["status"] = "complete"
+            job["message"] = "No deals match your search criteria"
+            await _notify(job_id, {
+                "type": "complete",
+                "total_results": 0,
+                "complete_results": 0,
+            })
+            return
+
+        # ── Step 3: Resolve home airports ─────────────────────
+        home_airports = config.get_airports_for_city(request.home_city)
+        if not home_airports:
+            job["status"] = "error"
+            job["error"] = f"No airports found for city '{request.home_city}'"
+            job["message"] = job["error"]
+            await _notify(job_id, {
+                "type": "status",
+                "step": "error",
+                "message": job["error"],
+            })
+            return
+
+        # ── Step 4: Pre-search unique flight routes ───────────
+        job["status"] = "searching"
+        job["message"] = "Searching flights..."
+        await _notify(job_id, {
+            "type": "status",
+            "step": "flights",
+            "message": "Searching flights...",
+        })
+
+        search_start = time.time()
+
+        async def on_route_progress(searched: int, total: int) -> None:
+            elapsed = time.time() - search_start
+            if searched > 0:
+                per_route = elapsed / searched
+                remaining = (total - searched) * per_route
+            else:
+                remaining = 0
+
+            job["searched_routes"] = searched
+            job["total_routes"] = total
+            await _notify(job_id, {
+                "type": "progress",
+                "step": "flights",
+                "searched": searched,
+                "total": total,
+                "eta_seconds": round(remaining, 1),
+            })
+
+        await presearch_unique_routes(filtered, home_airports, on_route_progress)
+
+        # ── Step 5: Enrich each deal ──────────────────────────
+        total = len(filtered)
+        for i, deal in enumerate(filtered, 1):
+            try:
+                enriched = await search_flights_for_deal(
+                    deal, request.home_city, home_airports
+                )
+                job["results"].append(enriched)
+                if enriched.get("is_complete"):
+                    job["complete_results"] += 1
+
+                job["searched_deals"] = i
+
+                await _notify(job_id, {
+                    "type": "result",
+                    "deal": enriched,
+                })
+
+            except Exception as e:
+                logger.warning("Error enriching deal %s: %s", deal.get("ref", "?"), e)
+                error_deal = {
+                    "deal": deal,
+                    "outbound_flights": [],
+                    "return_flights": [],
+                    "outbound_uk_transport": None,
+                    "return_uk_transport": None,
+                    "cheapest_outbound": None,
+                    "cheapest_return": None,
+                    "total_cost": 9999.0,
+                    "is_complete": False,
+                    "warnings": [f"Search failed: {e}"],
+                }
+                job["results"].append(error_deal)
+                job["searched_deals"] = i
+
+        # ── Step 6: Sort and complete ─────────────────────────
+        job["results"].sort(key=lambda x: x["total_cost"])
+        job["status"] = "complete"
+        job["message"] = "Search complete"
+        await _notify(job_id, {
+            "type": "complete",
+            "total_results": len(job["results"]),
+            "complete_results": job["complete_results"],
+        })
+
+    except ScrapingError as e:
+        job["status"] = "error"
+        job["error"] = str(e)
+        job["message"] = f"Scraping failed: {e}"
+        await _notify(job_id, {
+            "type": "status",
+            "step": "error",
+            "message": job["message"],
+        })
+        logger.error("Scraping error for job %s: %s", job_id, e)
+
+    except Exception as e:
+        job["status"] = "error"
+        job["error"] = str(e)
+        job["message"] = f"Unexpected error: {e}"
+        await _notify(job_id, {
+            "type": "status",
+            "step": "error",
+            "message": job["message"],
+        })
+        logger.error("Unexpected error for job %s: %s", job_id, e, exc_info=True)

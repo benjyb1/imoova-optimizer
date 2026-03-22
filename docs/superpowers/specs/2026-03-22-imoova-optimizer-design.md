@@ -49,8 +49,9 @@ imoova-optimizer/
 
 ### Dependencies
 
-- `httpx` — HTTP client for API calls
-- `playwright` — browser automation for Imoova scraping
+- `fast-flights` — Google Flights scraper (no API key needed), primary flight search
+- `httpx` — HTTP client for API calls (SerpAPI/Searchapi.io fallbacks)
+- `playwright` — browser automation for Imoova scraping (also used by fast-flights in fallback mode)
 - `openpyxl` — spreadsheet generation
 - `python-dotenv` — .env file loading
 
@@ -84,21 +85,32 @@ imoova-optimizer/
 
 ### 2. search_flights.py
 
-**API stack:**
-- **Primary:** SerpAPI Google Flights (`engine=google_flights`)
-- **Fallback:** Searchapi.io Google Flights (same engine, different provider)
+**API stack (in priority order):**
+1. **Primary: `fast-flights`** — free Google Flights scraper, no API key needed. Encodes queries as protobuf, parses Google's response HTML. Returns structured `Flights` objects.
+2. **Fallback 1: SerpAPI** Google Flights (`engine=google_flights`)
+3. **Fallback 2: Searchapi.io** Google Flights (same engine, different provider)
 
-Both return structured JSON with exact prices, airlines, flight numbers, departure/arrival times and airports.
+**fast-flights usage:**
+```python
+from fast_flights import FlightQuery, Passengers, create_query, get_flights
 
-**SerpAPI parameters:**
-- `engine=google_flights`
-- `type=2` (one-way)
+query = create_query(
+    flights=[FlightQuery(date="2026-03-28", from_airport="STN", to_airport="BCN")],
+    trip="one-way",
+    seat="economy",
+    passengers=Passengers(adults=1),
+)
+results = get_flights(query)  # returns MetaList[Flights]
+```
+
+Each `Flights` object contains: `price` (int), `airline_codes` (list), and a list of `SingleFlight` segments. Each `SingleFlight` has: departure/arrival `Airport` (code + name), departure/arrival `SimpleDatetime`, `duration` (minutes), and `aircraft_type`. The `MetaList.metadata` includes airline code-to-name mappings.
+
+**SerpAPI fallback parameters** (used when fast-flights fails or returns no results):
+- `engine=google_flights`, `type=2` (one-way)
 - `departure_id` / `arrival_id` = IATA airport codes
-- `outbound_date` = YYYY-MM-DD
-- `currency=GBP`
-- `hl=en`
+- `outbound_date` = YYYY-MM-DD, `currency=GBP`, `hl=en`
 
-Response contains `best_flights` and `other_flights` arrays. Each flight object includes airline, flight number, departure airport, arrival airport, departure time, arrival time, price, duration, number of stops.
+SerpAPI response contains `best_flights` and `other_flights` arrays with airline, flight number, airports, times, price, duration, stops.
 
 **Search strategy per deal:**
 - **Outbound:** London → Pickup City. Search day of pickup and (if pickup is after 28 March) the day before pickup. Never search before 28 March.
@@ -119,7 +131,9 @@ Response contains `best_flights` and `other_flights` arrays. Each flight object 
 - Cache TTL: 6 hours. If a cached file exists and is fresh, skip the API call.
 - Every API call logged to `data/api_log.json` (endpoint, params, status code, result count, timestamp).
 
-**Fallback logic:** If SerpAPI returns an error or empty results for a route, retry with Searchapi.io using equivalent parameters.
+**Fallback logic:** Try fast-flights first. If it raises an exception or returns an empty result list, fall back to SerpAPI. If SerpAPI also fails, try Searchapi.io. Log which provider succeeded for each route.
+
+**Note on fast-flights:** Since it scrapes Google directly, it has no API key cost but may be rate-limited by Google if we hammer it. Use a 2-second delay between fast-flights calls (slightly more conservative than the 1.5s for paid APIs). If Google starts returning errors, the fallback chain kicks in automatically.
 
 ### 3. uk_transport.py
 
@@ -205,7 +219,7 @@ SEARCHAPI_KEY=...
 ## Notes
 
 - **Imoova currency:** If deals are listed in EUR, convert to GBP using a hardcoded rate (e.g. 0.86) in `config.py`. Flag converted prices with "(converted)" in the spreadsheet.
-- **Expected API volume:** Roughly 20-40 deals × 2 legs × 2-3 dates × 1-3 airports = 100-300 SerpAPI calls. Well within typical free/starter tier limits.
+- **Expected query volume:** Roughly 20-40 deals × 2 legs × 2-3 dates × 1-3 airports = 100-300 flight searches. Most handled by fast-flights (free, no key). SerpAPI/Searchapi.io only used as fallbacks, so paid API usage should be minimal.
 - **Imoova scraping retries:** If the page fails to load, retry up to 3 times with 5-second waits before giving up.
 - **Max total cost filter:** Options over £300 total are excluded from the spreadsheet to keep it focused. This threshold is configurable in `config.py`.
 

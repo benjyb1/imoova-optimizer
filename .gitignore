@@ -1,0 +1,11 @@
+.env
+.env.local
+data/flight_cache/
+data/api_log.json
+data/imoova_deals.json
+output/
+__pycache__/
+node_modules/
+.next/
+backend/.env
+frontend/.env.local

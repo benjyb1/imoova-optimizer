@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #1a73e8;
+  --color-primary-dark: #1557b0;
+  --color-accent: #ff6d00;
+  --color-success: #34a853;
+  --color-bg: #f8fafc;
+  --color-card: #ffffff;
+  --color-text: #1e293b;
+  --color-text-muted: #64748b;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+@keyframes slideLeft {
+  from {
+    transform: translateX(10px);
+    opacity: 0.3;
+  }
+  to {
+    transform: translateX(-10px);
+    opacity: 1;
+  }
+}
