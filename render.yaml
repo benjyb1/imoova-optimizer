@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: imoova-optimizer-api
+    runtime: docker
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    plan: free
+    envVars:
+      - key: CORS_ORIGINS
+        value: https://frontend-kappa-orpin-79.vercel.app,http://localhost:3001
+      - key: SERPAPI_KEY
+        value: ""
+      - key: SEARCHAPI_KEY
+        value: ""
