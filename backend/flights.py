@@ -611,16 +611,50 @@ async def search_flights_for_deal(
         deal.get("pickup_city", ""), deal.get("dropoff_city", "")
     )
 
+    # ── Build Google Flights URLs ──────────────────────────────
+    def _google_flights_url(from_apts, to_apts, d):
+        if not from_apts or not to_apts:
+            return None
+        return (
+            f"https://www.google.com/travel/flights?q="
+            f"Flights+from+{from_apts[0]}+to+{to_apts[0]}+on+{d}"
+        )
+
+    pickup_airports = config.get_airports_for_city(pickup_city) or []
+    dropoff_airports = config.get_airports_for_city(dropoff_city) or []
+
+    gf_outbound_url = None if home_is_pickup else _google_flights_url(
+        home_airports, pickup_airports, depart_date.isoformat()
+    )
+    gf_return_url = None if home_is_dropoff else _google_flights_url(
+        dropoff_airports, home_airports, deliver_date.isoformat()
+    )
+
+    # ── Reshape deal info to match frontend DealInfo interface ──
+    deal_info = {
+        "pickup_city": pickup_city,
+        "pickup_country": config.CITY_COUNTRIES.get(pickup_city, ""),
+        "dropoff_city": dropoff_city,
+        "dropoff_country": config.CITY_COUNTRIES.get(dropoff_city, ""),
+        "pickup_date": deal["depart_date"],
+        "dropoff_date": deal["deliver_date"],
+        "drive_days": deal.get("drive_days", 0),
+        "vehicle_type": deal.get("vehicle", ""),
+        "seats": deal.get("seats", 0),
+        "imoova_price_gbp": deal.get("rate_gbp", 0),
+        "imoova_url": deal.get("deal_url", ""),
+    }
+
     return {
-        "deal": deal,
+        "deal": deal_info,
         "drive_hours": drive_hours,
-        "outbound_flights": [asdict(f) for f in outbound_flights[:3]],
-        "return_flights": [asdict(f) for f in return_flights[:3]],
-        "outbound_uk_transport": outbound_uk_transport,
-        "return_uk_transport": return_uk_transport,
-        "cheapest_outbound": asdict(cheapest_out) if cheapest_out else None,
-        "cheapest_return": asdict(cheapest_ret) if cheapest_ret else None,
-        "total_cost": round(total, 2),
+        "outbound_flight": asdict(cheapest_out) if cheapest_out else None,
+        "return_flight": asdict(cheapest_ret) if cheapest_ret else None,
+        "outbound_is_home": home_is_pickup,
+        "return_is_home": home_is_dropoff,
+        "total_price_gbp": round(total, 2) if is_complete else None,
+        "google_flights_outbound_url": gf_outbound_url,
+        "google_flights_return_url": gf_return_url,
         "is_complete": is_complete,
         "warnings": warnings,
     }

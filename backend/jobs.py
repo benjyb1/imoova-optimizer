@@ -269,14 +269,27 @@ async def run_job(job_id: str) -> None:
             except Exception as e:
                 logger.warning("Error enriching deal %s: %s", deal.get("ref", "?"), e)
                 error_deal = {
-                    "deal": deal,
-                    "outbound_flights": [],
-                    "return_flights": [],
-                    "outbound_uk_transport": None,
-                    "return_uk_transport": None,
-                    "cheapest_outbound": None,
-                    "cheapest_return": None,
-                    "total_cost": 9999.0,
+                    "deal": {
+                        "pickup_city": deal.get("pickup_city", ""),
+                        "pickup_country": config.CITY_COUNTRIES.get(deal.get("pickup_city", ""), ""),
+                        "dropoff_city": deal.get("dropoff_city", ""),
+                        "dropoff_country": config.CITY_COUNTRIES.get(deal.get("dropoff_city", ""), ""),
+                        "pickup_date": deal.get("depart_date", ""),
+                        "dropoff_date": deal.get("deliver_date", ""),
+                        "drive_days": deal.get("drive_days", 0),
+                        "vehicle_type": deal.get("vehicle", ""),
+                        "seats": deal.get("seats", 0),
+                        "imoova_price_gbp": deal.get("rate_gbp", 0),
+                        "imoova_url": deal.get("deal_url", ""),
+                    },
+                    "drive_hours": None,
+                    "outbound_flight": None,
+                    "return_flight": None,
+                    "outbound_is_home": False,
+                    "return_is_home": False,
+                    "total_price_gbp": None,
+                    "google_flights_outbound_url": None,
+                    "google_flights_return_url": None,
                     "is_complete": False,
                     "warnings": [f"Search failed: {e}"],
                 }
@@ -284,7 +297,7 @@ async def run_job(job_id: str) -> None:
                 job["searched_deals"] = i
 
         # ── Step 6: Sort and complete ─────────────────────────
-        job["results"].sort(key=lambda x: x["total_cost"])
+        job["results"].sort(key=lambda x: x.get("total_price_gbp") or 9999)
         job["status"] = "complete"
         job["message"] = "Search complete"
         await _notify(job_id, {
