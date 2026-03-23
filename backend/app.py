@@ -75,7 +75,7 @@ async def startup_cleanup_loop() -> None:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "version": "2"}
+    return {"status": "ok", "version": "3"}
 
 
 @app.get("/api/debug/scrape")

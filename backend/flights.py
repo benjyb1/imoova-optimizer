@@ -2,7 +2,7 @@
 Search for flight prices using fast-flights (Google Flights scraper).
 Includes caching, rate limiting, and optional SerpAPI/SearchAPI fallbacks.
 
-Uses a persistent Playwright browser to avoid re-launching per search.
+Uses primp HTTP client with consent cookies — no browser/Playwright needed.
 Adapted from the original search_flights.py for the async FastAPI backend.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ from typing import Any, Callable, Coroutine, Dict, List, Optional, Set, Tuple
 
 import httpx
 from dotenv import load_dotenv
-from playwright.async_api import async_playwright, Browser, Page
+from primp import Client as PrimpClient
 
 from fast_flights import FlightData, Passengers, TFSData, Result
 from fast_flights.core import parse_response
@@ -32,11 +32,7 @@ logger = logging.getLogger(__name__)
 # ── Module state (per-process, shared across jobs) ────────────
 _last_call_time: float = 0.0
 _consecutive_failures: int = 0
-_browser: Optional[Browser] = None
-_page: Optional[Page] = None
-_consent_accepted: bool = False
-_playwright_ctx: Any = None
-_browser_lock: asyncio.Lock = asyncio.Lock()
+_primp_client: Optional[PrimpClient] = None
 
 
 @dataclass
@@ -66,86 +62,26 @@ async def _rate_limit(delay: float) -> None:
     _last_call_time = time.time()
 
 
-# ── Persistent Playwright browser (async-native) ─────────────
+# ── HTTP client with Google consent cookies (no browser needed) ─
 
-async def _ensure_browser() -> None:
-    """Launch a browser once and reuse it for all searches."""
-    global _browser, _page, _playwright_ctx, _consent_accepted
-
-    async with _browser_lock:
-        if _browser and _page:
-            return
-
-        logger.info("Launching persistent browser for flight searches...")
-        _playwright_ctx = await async_playwright().start()
-        _browser = await _playwright_ctx.chromium.launch(headless=True)
-        context = await _browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            locale="en-GB",
-        )
-        _page = await context.new_page()
-
-        # Navigate to Google Flights once to accept consent
-        await _page.goto(
-            "https://www.google.com/travel/flights",
-            wait_until="domcontentloaded",
-            timeout=20000,
-        )
-        await asyncio.sleep(1)
-
-        if "consent.google" in _page.url:
-            try:
-                await _page.click('button:has-text("Accept all")', timeout=5000)
-                await asyncio.sleep(1)
-                _consent_accepted = True
-                logger.info("Accepted Google cookie consent.")
-            except Exception:
-                logger.warning("Could not find consent button, continuing anyway...")
-        else:
-            _consent_accepted = True
-            logger.info("No consent wall encountered.")
-
-
-async def _fetch_flights_reuse_browser(url: str) -> str:
-    """
-    Navigate the persistent page to a Google Flights URL and extract results.
-    """
-    await _ensure_browser()
-    assert _page is not None
-
-    await _page.goto(url, wait_until="domcontentloaded", timeout=20000)
-
-    if "consent.google" in _page.url:
-        try:
-            await _page.click('button:has-text("Accept all")', timeout=3000)
-            await asyncio.sleep(1)
-        except Exception:
-            pass
-
-    try:
-        locator = _page.locator(".eQ35Ce")
-        await locator.wait_for(timeout=10000)
-    except Exception:
-        await asyncio.sleep(2)
-
-    body: str = await _page.evaluate(
-        '() => { const el = document.querySelector(\'[role="main"]\'); '
-        "return el ? el.innerHTML : document.body.innerHTML; }"
-    )
-    return body
+def _get_primp_client() -> PrimpClient:
+    """Get or create a primp HTTP client with consent cookies set."""
+    global _primp_client
+    if _primp_client is None:
+        _primp_client = PrimpClient(impersonate="chrome_126", verify=False)
+        # Set Google consent cookies to bypass the consent wall
+        _primp_client.set_cookies("https://www.google.com", {
+            "SOCS": "CAESEwgDEgk2MjY0Mzc0MzIaAmVuIAEaBgiA_OCyBg",
+            "CONSENT": "YES+",
+        })
+        logger.info("Initialised primp HTTP client with consent cookies.")
+    return _primp_client
 
 
 async def close_browser() -> None:
-    """Clean up the persistent browser."""
-    global _browser, _page, _playwright_ctx
-    async with _browser_lock:
-        if _browser:
-            await _browser.close()
-            _browser = None
-            _page = None
-        if _playwright_ctx:
-            await _playwright_ctx.stop()
-            _playwright_ctx = None
+    """No-op for backwards compatibility — no browser to close."""
+    global _primp_client
+    _primp_client = None
 
 
 def parse_price_to_gbp(price_str: str) -> Optional[float]:
@@ -204,7 +140,8 @@ async def search_fast_flights(
     from_iata: str, to_iata: str, search_date: str
 ) -> List[FlightResult]:
     """
-    Search using fast-flights' protobuf encoding + persistent Playwright browser.
+    Search using fast-flights protobuf encoding + primp HTTP client.
+    No browser needed — uses consent cookies to bypass Google's wall.
     """
     global _consecutive_failures
 
@@ -224,25 +161,34 @@ async def search_fast_flights(
             passengers=Passengers(adults=1),
             seat="economy",
         )
-        encoded = tfs.as_b64()
-        url_params = {
-            "tfs": encoded.decode("utf-8"),
+        params = {
+            "tfs": tfs.as_b64().decode("utf-8"),
             "hl": "en",
             "tfu": "EgQIABABIgA",
             "curr": "GBP",
         }
-        url = "https://www.google.com/travel/flights?" + "&".join(
-            f"{k}={v}" for k, v in url_params.items()
+
+        # Use primp HTTP client (runs in thread pool to avoid blocking event loop)
+        client = _get_primp_client()
+        res = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: client.get("https://www.google.com/travel/flights", params=params),
         )
 
-        body = await _fetch_flights_reuse_browser(url)
+        if res.status_code != 200:
+            logger.warning(
+                "Google Flights returned %d for %s->%s", res.status_code, from_iata, to_iata
+            )
+            return []
 
-        class DummyResponse:
-            status_code = 200
-            text = body
-            text_markdown = body
+        # Check for consent wall in response
+        if "Before you continue" in res.text[:1000]:
+            logger.warning("Hit consent wall for %s->%s, resetting client", from_iata, to_iata)
+            global _primp_client
+            _primp_client = None  # Force re-creation with fresh cookies
+            return []
 
-        result: Result = parse_response(DummyResponse())
+        result: Result = parse_response(res)
 
         flights: List[FlightResult] = []
         for f in result.flights:
