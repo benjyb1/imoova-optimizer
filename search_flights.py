@@ -579,8 +579,8 @@ def search_flights_for_deal(deal: dict) -> dict:
     cheapest_out = outbound_flights[0] if outbound_flights else None
     cheapest_ret = return_flights[0] if return_flights else None
 
-    # ── Calculate total cost ──────────────────────────────────
-    total = deal["rate_gbp"]
+    # ── Calculate total cost (per person: half the Imoova fee) ─
+    total = deal["rate_gbp"] / 2
 
     if cheapest_out:
         total += cheapest_out.price_gbp

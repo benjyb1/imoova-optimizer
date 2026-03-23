@@ -328,23 +328,38 @@ async def parse_table(page: Page) -> list[dict]:
 def filter_deals(raw_deals: list[dict]) -> list[dict]:
     """
     Filter deals to match our travel constraints:
-    - 5-10 drive days
-    - Pickup date >= TRAVEL_WINDOW_START
-    - Deliver date <= TRAVEL_WINDOW_END
-    - Not both cities in the UK
+
+    Hard deadline: must be home by TRAVEL_WINDOW_END.
+    Earliest departure: TRAVEL_WINDOW_START.
+
+    You fly out the day before or day of pickup, and fly home the day
+    of or day after delivery. So the full trip span from the user's
+    perspective is roughly (pickup_date - 1) to (deliver_date + 1).
+
+    Max trip length is dynamic: if you leave later, you have fewer
+    days before the deadline. Min trip is still MIN_DRIVE_DAYS.
+
+    Also filters out:
+    - Both cities in the UK
+    - Same-country trips
     """
     filtered = []
     for deal in raw_deals:
-        days = deal["drive_days"]
-        if days < config.MIN_DRIVE_DAYS or days > config.MAX_DRIVE_DAYS:
-            continue
-
         depart = date.fromisoformat(deal["depart_date"])
         deliver = date.fromisoformat(deal["deliver_date"])
+        days = deal["drive_days"]
 
+        # Can't pick up before we can leave
         if depart < config.TRAVEL_WINDOW_START:
             continue
-        if deliver > config.TRAVEL_WINDOW_END:
+
+        # Must be home by deadline. You fly back day of or day after
+        # delivery, so deliver + 1 must be <= TRAVEL_WINDOW_END.
+        if deliver + timedelta(days=1) > config.TRAVEL_WINDOW_END:
+            continue
+
+        # Min trip length still applies
+        if days < config.MIN_DRIVE_DAYS:
             continue
 
         # At least one end must be outside the UK
@@ -353,7 +368,7 @@ def filter_deals(raw_deals: list[dict]) -> list[dict]:
         if pickup_uk and dropoff_uk:
             continue
 
-        # Skip same-country trips (not much of a holiday)
+        # Skip same-country trips (no point driving within one country)
         pickup_country = config.CITY_COUNTRIES.get(deal["pickup_city"], "")
         dropoff_country = config.CITY_COUNTRIES.get(deal["dropoff_city"], "")
         if pickup_country and dropoff_country and pickup_country == dropoff_country:

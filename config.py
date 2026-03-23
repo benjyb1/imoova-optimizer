@@ -8,10 +8,10 @@ from datetime import date
 import os
 
 # ── Travel window ──────────────────────────────────────────────
-TRAVEL_WINDOW_START = date(2026, 3, 28)
-TRAVEL_WINDOW_END = date(2026, 4, 10)
+TRAVEL_WINDOW_START = date(2026, 4, 3)
+TRAVEL_WINDOW_END = date(2026, 4, 15)
 MIN_DRIVE_DAYS = 5
-MAX_DRIVE_DAYS = 10
+MAX_DRIVE_DAYS = 99  # no hard cap — constrained by TRAVEL_WINDOW_END instead
 
 # ── Currency conversion (rough, for Imoova rate parsing) ──────
 EUR_TO_GBP = 0.86
@@ -22,7 +22,7 @@ AUD_TO_GBP = 0.51
 LONDON_AIRPORTS = ["LHR", "LGW", "STN", "LTN", "SEN"]
 # Budget carriers fly from these. Search these to keep query count down.
 # STN = Ryanair hub, LGW = easyJet hub. LTN adds marginal value.
-LONDON_PRIORITY_AIRPORTS = ["STN", "LGW"]
+LONDON_PRIORITY_AIRPORTS = ["STN", "LGW", "LHR", "LTN"]
 
 # ── City → IATA airport codes ────────────────────────────────
 # Multi-airport cities list all relevant codes.
@@ -132,6 +132,45 @@ CITY_AIRPORTS: dict[str, list[str]] = {
     "Vilnius": ["VNO"],
     "Split": ["SPU"],
     "Dubrovnik": ["DBV"],
+}
+
+# ── City -> Country mapping ───────────────────────────────────
+CITY_COUNTRIES: dict[str, str] = {
+    "London": "United Kingdom", "Manchester": "United Kingdom",
+    "Birmingham": "United Kingdom", "Edinburgh": "United Kingdom",
+    "Glasgow": "United Kingdom", "Bristol": "United Kingdom",
+    "Leeds": "United Kingdom", "Liverpool": "United Kingdom",
+    "Newcastle": "United Kingdom", "Southampton": "United Kingdom",
+    "Belfast": "United Kingdom", "Cardiff": "United Kingdom",
+    "Paris": "France", "Lyon": "France", "Marseille": "France",
+    "Nice": "France", "Bordeaux": "France", "Toulouse": "France",
+    "Nantes": "France", "Strasbourg": "France", "Montpellier": "France",
+    "Bastia": "France",
+    "Barcelona": "Spain", "Madrid": "Spain", "Malaga": "Spain",
+    "Seville": "Spain", "Valencia": "Spain", "Alicante": "Spain",
+    "Bilbao": "Spain", "Palma": "Spain", "Palma de Mallorca": "Spain",
+    "Rome": "Italy", "Milan": "Italy", "Venice": "Italy",
+    "Florence": "Italy", "Naples": "Italy", "Bologna": "Italy",
+    "Turin": "Italy", "Palermo": "Italy", "Catania": "Italy",
+    "Bari": "Italy", "Pisa": "Italy", "Genoa": "Italy",
+    "Olbia": "Italy", "Cagliari": "Italy", "Bergamo": "Italy",
+    "Berlin": "Germany", "Munich": "Germany", "Frankfurt": "Germany",
+    "Hamburg": "Germany", "Cologne": "Germany", "Dusseldorf": "Germany",
+    "Stuttgart": "Germany", "Hannover": "Germany", "Nuremberg": "Germany",
+    "Amsterdam": "Netherlands", "Brussels": "Belgium",
+    "Eindhoven": "Netherlands", "Luxembourg": "Luxembourg",
+    "Copenhagen": "Denmark", "Stockholm": "Sweden", "Oslo": "Norway",
+    "Helsinki": "Finland", "Gothenburg": "Sweden", "Malmo": "Sweden",
+    "Vienna": "Austria", "Prague": "Czech Republic", "Budapest": "Hungary",
+    "Warsaw": "Poland", "Krakow": "Poland", "Bratislava": "Slovakia",
+    "Zagreb": "Croatia", "Bucharest": "Romania", "Sofia": "Bulgaria",
+    "Ljubljana": "Slovenia",
+    "Zurich": "Switzerland", "Geneva": "Switzerland", "Basel": "Switzerland",
+    "Lisbon": "Portugal", "Porto": "Portugal", "Faro": "Portugal",
+    "Athens": "Greece", "Thessaloniki": "Greece",
+    "Dublin": "Ireland", "Cork": "Ireland",
+    "Reykjavik": "Iceland", "Tallinn": "Estonia", "Riga": "Latvia",
+    "Vilnius": "Lithuania", "Split": "Croatia", "Dubrovnik": "Croatia",
 }
 
 # ── UK cities (for domestic transport logic) ──────────────────

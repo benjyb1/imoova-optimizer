@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class SearchRequest(BaseModel):
     home_city: str
-    min_days: int = Field(default=5, ge=1, le=30)
+    min_days: int = Field(default=3, ge=1, le=30)
     max_days: int = Field(default=10, ge=1, le=30)
     min_seats: Optional[int] = Field(default=None, ge=1, le=10)
     earliest_departure: str = Field(default="")

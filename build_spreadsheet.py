@@ -145,7 +145,7 @@ def _build_all_options(ws, deals: list[dict], is_top10: bool = False):
             deal["depart_date"],
             deal["drive_days"],
             deal["vehicle"],
-            deal["rate_gbp"],
+            deal["rate_gbp"] / 2,  # per-person: split Imoova fee with partner
             ob.get("search_date", "") if ob else "",
             ob.get("airline", "") if ob else "",
             f"{ob['departure_airport']}->{ob['arrival_airport']}" if ob else "",
