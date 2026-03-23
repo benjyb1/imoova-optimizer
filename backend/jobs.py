@@ -7,10 +7,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 import uuid
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Set
+
+import httpx
 
 from fastapi import WebSocket
 
@@ -119,6 +122,22 @@ def cleanup_expired_jobs() -> int:
     return len(expired)
 
 
+async def _keep_alive(job_id: str) -> None:
+    """Self-ping to keep Render free tier awake during long jobs."""
+    port = int(os.environ.get("PORT", "10000"))
+    url = f"http://localhost:{port}/health"
+    try:
+        async with httpx.AsyncClient() as client:
+            while job_id in _jobs and _jobs[job_id]["status"] not in ("complete", "error"):
+                await asyncio.sleep(20)
+                try:
+                    await client.get(url, timeout=5)
+                except Exception:
+                    pass
+    except asyncio.CancelledError:
+        pass
+
+
 async def run_job(job_id: str) -> None:
     """
     Main job pipeline:
@@ -133,6 +152,9 @@ async def run_job(job_id: str) -> None:
         return
 
     request: SearchRequest = job["request"]
+
+    # Keep-alive: ping ourselves every 20s to prevent Render free tier spin-down
+    keep_alive_task = asyncio.create_task(_keep_alive(job_id))
 
     try:
         # ── Step 1: Scrape Imoova ─────────────────────────────
@@ -295,3 +317,6 @@ async def run_job(job_id: str) -> None:
             "message": job["message"],
         })
         logger.error("Unexpected error for job %s: %s", job_id, e, exc_info=True)
+
+    finally:
+        keep_alive_task.cancel()
