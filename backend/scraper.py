@@ -47,15 +47,14 @@ def parse_date(text: str) -> Optional[date]:
 
 def parse_days(text: str) -> int:
     """
-    Parse days string like '7 + 2 nights', '5', '7+2'.
-    Returns total (driving + buffer).
+    Parse days string like '4 + 1 nights', '5', '7+2'.
+    Returns only the included driving days (first number).
+    The '+N' is optional paid buffer days, not free.
     """
     text = text.strip()
     numbers = re.findall(r"\d+", text)
     if not numbers:
         return 0
-    if len(numbers) >= 2:
-        return int(numbers[0]) + int(numbers[1])
     return int(numbers[0])
 
 
