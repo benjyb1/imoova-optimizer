@@ -73,7 +73,7 @@ async def startup_cleanup_loop() -> None:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "version": "6"}
+    return {"status": "ok", "version": "7"}
 
 
 @app.get("/api/debug/jobs")
@@ -191,6 +191,7 @@ async def websocket_job(ws: WebSocket, job_id: str) -> None:
     last_message = ""
     last_searched_routes = 0
     last_results_sent = 0
+    ping_counter = 0
 
     try:
         while True:
@@ -201,6 +202,7 @@ async def websocket_job(ws: WebSocket, job_id: str) -> None:
 
             status = job["status"]
             message = job.get("message", "")
+            sent_something = False
 
             # Send status updates when they change
             if status != last_status or message != last_message:
@@ -218,6 +220,7 @@ async def websocket_job(ws: WebSocket, job_id: str) -> None:
                         "step": step,
                         "message": message,
                     })
+                    sent_something = True
                 last_status = status
                 last_message = message
 
@@ -234,6 +237,7 @@ async def websocket_job(ws: WebSocket, job_id: str) -> None:
                         "eta_seconds": 0,
                     })
                     last_searched_routes = searched_routes
+                    sent_something = True
 
             # Send new results as they arrive
             all_results = job.get("results", [])
@@ -241,6 +245,7 @@ async def websocket_job(ws: WebSocket, job_id: str) -> None:
                 for enriched in all_results[last_results_sent:]:
                     await ws.send_json({"type": "result", "deal": enriched})
                 last_results_sent = len(all_results)
+                sent_something = True
 
             # Send completion
             if status == "complete":
@@ -250,6 +255,12 @@ async def websocket_job(ws: WebSocket, job_id: str) -> None:
                     "complete_results": job.get("complete_results", 0),
                 })
                 break
+
+            # Send keepalive ping every ~10s to prevent Render proxy from
+            # dropping the connection during long-running phases like scraping
+            ping_counter += 1
+            if not sent_something and ping_counter % 2 == 0:
+                await ws.send_json({"type": "ping"})
 
             await asyncio.sleep(2)
 
