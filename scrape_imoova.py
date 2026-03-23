@@ -353,6 +353,12 @@ def filter_deals(raw_deals: list[dict]) -> list[dict]:
         if pickup_uk and dropoff_uk:
             continue
 
+        # Skip same-country trips (not much of a holiday)
+        pickup_country = config.CITY_COUNTRIES.get(deal["pickup_city"], "")
+        dropoff_country = config.CITY_COUNTRIES.get(deal["dropoff_city"], "")
+        if pickup_country and dropoff_country and pickup_country == dropoff_country:
+            continue
+
         filtered.append(deal)
 
     return filtered
