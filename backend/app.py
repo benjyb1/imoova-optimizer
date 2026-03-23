@@ -10,7 +10,7 @@ import os
 from typing import List
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -107,7 +107,7 @@ async def cities() -> List[dict]:
 # ── Create search job ────────────────────────────────────────
 
 @app.post("/api/search")
-async def search(request: SearchRequest, background_tasks: BackgroundTasks) -> dict:
+async def search(request: SearchRequest) -> dict:
     # Validate home city has airports
     airports = config.get_airports_for_city(request.home_city)
     if not airports:
@@ -117,7 +117,9 @@ async def search(request: SearchRequest, background_tasks: BackgroundTasks) -> d
         )
 
     job_id = create_job(request)
-    background_tasks.add_task(run_job, job_id)
+    # Use asyncio.create_task so run_job stays on the event loop
+    # (BackgroundTasks runs in a threadpool which breaks async WebSocket notifications)
+    asyncio.create_task(run_job(job_id))
     return {"job_id": job_id}
 
 
