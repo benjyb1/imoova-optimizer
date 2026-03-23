@@ -9,7 +9,7 @@ import json
 import logging
 import time
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Set
 
 from fastapi import WebSocket
@@ -149,8 +149,10 @@ async def run_job(job_id: str) -> None:
 
         # ── Step 2: Filter deals ──────────────────────────────
         job["status"] = "filtering"
-        earliest = date.fromisoformat(request.earliest_departure)
-        latest = date.fromisoformat(request.latest_return)
+        earliest_str = request.earliest_departure or (date.today() + timedelta(days=3)).isoformat()
+        latest_str = request.latest_return or (date.today() + timedelta(days=28)).isoformat()
+        earliest = date.fromisoformat(earliest_str)
+        latest = date.fromisoformat(latest_str)
 
         filtered = filter_deals(
             raw_deals,
