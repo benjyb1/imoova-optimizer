@@ -330,10 +330,10 @@ def filter_deals(
         if pickup_uk and dropoff_uk:
             continue
 
-        # Skip same-country trips (no point driving within one country)
+        # Skip Germany-to-Germany trips (short boring hops)
         pickup_country = config.CITY_COUNTRIES.get(deal["pickup_city"], "")
         dropoff_country = config.CITY_COUNTRIES.get(deal["dropoff_city"], "")
-        if pickup_country and dropoff_country and pickup_country == dropoff_country:
+        if pickup_country == dropoff_country and pickup_country == "Germany":
             continue
 
         filtered.append(deal)
