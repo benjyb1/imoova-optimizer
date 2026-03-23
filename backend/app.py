@@ -20,8 +20,6 @@ from jobs import (
     create_job,
     get_job,
     get_job_results,
-    register_websocket,
-    unregister_websocket,
     run_job,
     cleanup_expired_jobs,
 )
@@ -75,7 +73,7 @@ async def startup_cleanup_loop() -> None:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "version": "5"}
+    return {"status": "ok", "version": "6"}
 
 
 @app.get("/api/debug/jobs")
@@ -175,6 +173,12 @@ async def results(job_id: str) -> dict:
 
 @app.websocket("/ws/job/{job_id}")
 async def websocket_job(ws: WebSocket, job_id: str) -> None:
+    """
+    Poll-based WebSocket handler. Instead of relying on push notifications
+    from run_job (which causes concurrent read/write issues on the same
+    WebSocket), this handler polls the job state every 2 seconds and sends
+    any new updates to the client.
+    """
     await ws.accept()
 
     job = get_job(job_id)
@@ -183,65 +187,73 @@ async def websocket_job(ws: WebSocket, job_id: str) -> None:
         await ws.close()
         return
 
-    register_websocket(job_id, ws)
+    last_status = ""
+    last_message = ""
+    last_searched_routes = 0
+    last_results_sent = 0
 
-    # If the job already has results, send them all immediately (reconnect case)
-    existing_results = job.get("results", [])
-    if existing_results:
-        for enriched in existing_results:
-            try:
-                await ws.send_json({"type": "result", "deal": enriched})
-            except Exception:
-                unregister_websocket(job_id, ws)
-                return
-
-    # If already complete, send completion message
-    if job["status"] == "complete":
-        try:
-            await ws.send_json({
-                "type": "complete",
-                "total_results": len(existing_results),
-                "complete_results": job.get("complete_results", 0),
-            })
-        except Exception:
-            pass
-        unregister_websocket(job_id, ws)
-        return
-
-    if job["status"] == "error":
-        try:
-            await ws.send_json({
-                "type": "status",
-                "step": "error",
-                "message": job.get("message", "Unknown error"),
-            })
-        except Exception:
-            pass
-        unregister_websocket(job_id, ws)
-        return
-
-    # Keep connection alive with heartbeat pings while job runs
     try:
         while True:
-            # Wait for a message (client might send pongs or close)
-            # Use a timeout to send periodic pings
-            try:
-                await asyncio.wait_for(ws.receive_text(), timeout=10.0)
-            except asyncio.TimeoutError:
-                # Send a heartbeat ping
-                try:
-                    await ws.send_json({"type": "ping"})
-                except Exception:
-                    break
-
-            # Check if job is done
-            current_job = get_job(job_id)
-            if current_job is None or current_job["status"] in ("complete", "error"):
+            job = get_job(job_id)
+            if job is None:
+                await ws.send_json({"type": "error", "message": "Job expired"})
                 break
+
+            status = job["status"]
+            message = job.get("message", "")
+
+            # Send status updates when they change
+            if status != last_status or message != last_message:
+                if status == "error":
+                    await ws.send_json({
+                        "type": "status",
+                        "step": "error",
+                        "message": message,
+                    })
+                    break
+                elif status in ("scraping", "filtering", "searching"):
+                    step = "flights" if status == "searching" else status
+                    await ws.send_json({
+                        "type": "status",
+                        "step": step,
+                        "message": message,
+                    })
+                last_status = status
+                last_message = message
+
+            # Send flight search progress
+            if status == "searching":
+                searched_routes = job.get("searched_routes", 0)
+                total_routes = job.get("total_routes", 0)
+                if searched_routes != last_searched_routes and total_routes > 0:
+                    await ws.send_json({
+                        "type": "progress",
+                        "step": "flights",
+                        "searched": searched_routes,
+                        "total": total_routes,
+                        "eta_seconds": 0,
+                    })
+                    last_searched_routes = searched_routes
+
+            # Send new results as they arrive
+            all_results = job.get("results", [])
+            if len(all_results) > last_results_sent:
+                for enriched in all_results[last_results_sent:]:
+                    await ws.send_json({"type": "result", "deal": enriched})
+                last_results_sent = len(all_results)
+
+            # Send completion
+            if status == "complete":
+                await ws.send_json({
+                    "type": "complete",
+                    "total_results": len(all_results),
+                    "complete_results": job.get("complete_results", 0),
+                })
+                break
+
+            await asyncio.sleep(2)
 
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
-    finally:
-        unregister_websocket(job_id, ws)
+    except Exception as e:
+        logger.warning("WebSocket error for job %s: %s", job_id, e)
