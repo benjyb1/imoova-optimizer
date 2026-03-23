@@ -19,7 +19,7 @@ LONDON_PRIORITY_AIRPORTS = ["STN", "LGW"]
 # ── City -> IATA airport codes ────────────────────────────────
 CITY_AIRPORTS: Dict[str, List[str]] = {
     # UK
-    "London": LONDON_AIRPORTS,
+    "London": LONDON_PRIORITY_AIRPORTS,  # STN+LGW only (covers 90%+ of cheap flights)
     "Manchester": ["MAN"],
     "Birmingham": ["BHX"],
     "Edinburgh": ["EDI"],
@@ -292,7 +292,7 @@ IMOOVA_TABLE_URL = "https://www.imoova.com/en/relocations/table/europe"
 IMOOVA_BASE_URL = "https://www.imoova.com"
 
 # ── Rate limiting & caching ───────────────────────────────────
-FAST_FLIGHTS_DELAY_SECONDS = 1.5
+FAST_FLIGHTS_DELAY_SECONDS = 0.8
 API_DELAY_SECONDS = 1.5
 FLIGHT_CACHE_TTL_HOURS = 72
 MAX_CONSECUTIVE_FAILURES = 5
