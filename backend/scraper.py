@@ -307,8 +307,14 @@ def filter_deals(
         if days < min_days or days > max_days:
             continue
 
-        depart = date.fromisoformat(deal["depart_date"])
-        deliver = date.fromisoformat(deal["deliver_date"])
+        # Skip deals with empty/invalid dates
+        if not deal.get("depart_date") or not deal.get("deliver_date"):
+            continue
+        try:
+            depart = date.fromisoformat(deal["depart_date"])
+            deliver = date.fromisoformat(deal["deliver_date"])
+        except (ValueError, TypeError):
+            continue
 
         if depart < earliest_departure:
             continue
