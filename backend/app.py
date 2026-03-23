@@ -75,7 +75,25 @@ async def startup_cleanup_loop() -> None:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "version": "4"}
+    return {"status": "ok", "version": "5"}
+
+
+@app.get("/api/debug/jobs")
+async def debug_jobs() -> dict:
+    """Debug endpoint: list active jobs."""
+    import time as _time
+    from jobs import _jobs
+    summary = {}
+    for jid, job in _jobs.items():
+        summary[jid] = {
+            "status": job["status"],
+            "message": job.get("message", ""),
+            "total_deals": job.get("total_deals", 0),
+            "searched_deals": job.get("searched_deals", 0),
+            "results_count": len(job.get("results", [])),
+            "age_seconds": round(_time.time() - job["created_at"], 1),
+        }
+    return {"active_jobs": len(summary), "jobs": summary}
 
 
 @app.get("/api/debug/scrape")
@@ -117,9 +135,16 @@ async def search(request: SearchRequest) -> dict:
         )
 
     job_id = create_job(request)
-    # Use asyncio.create_task so run_job stays on the event loop
-    # (BackgroundTasks runs in a threadpool which breaks async WebSocket notifications)
-    asyncio.create_task(run_job(job_id))
+
+    async def _run_with_logging(jid: str) -> None:
+        try:
+            logger.info("Starting job %s", jid)
+            await run_job(jid)
+            logger.info("Job %s completed", jid)
+        except Exception:
+            logger.exception("Job %s crashed", jid)
+
+    asyncio.create_task(_run_with_logging(job_id))
     return {"job_id": job_id}
 
 
