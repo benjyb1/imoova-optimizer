@@ -75,7 +75,26 @@ async def startup_cleanup_loop() -> None:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "version": "2"}
+
+
+@app.get("/api/debug/scrape")
+async def debug_scrape() -> dict:
+    """Debug endpoint: scrape Imoova and return raw results."""
+    from scraper import scrape_all_deals
+    try:
+        deals = await scrape_all_deals()
+        sample = deals[:3] if deals else []
+        bad = [d for d in deals if not d.get("depart_date") or not d.get("deliver_date")]
+        return {
+            "total_raw": len(deals),
+            "bad_dates": len(bad),
+            "bad_samples": bad[:5],
+            "sample_deals": sample,
+        }
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}
 
 
 # ── City list for autocomplete ────────────────────────────────

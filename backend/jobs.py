@@ -281,9 +281,12 @@ async def run_job(job_id: str) -> None:
         logger.error("Scraping error for job %s: %s", job_id, e)
 
     except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        logger.error("Unexpected error for job %s:\n%s", job_id, tb)
         job["status"] = "error"
         job["error"] = str(e)
-        job["message"] = f"Unexpected error: {e}"
+        job["message"] = f"Unexpected error: {e}\n{tb[-500:]}"
         await _notify(job_id, {
             "type": "status",
             "step": "error",
