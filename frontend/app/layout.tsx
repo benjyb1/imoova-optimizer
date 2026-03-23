@@ -8,7 +8,7 @@ const geist = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Imoova Holiday Optimizer",
+  title: "Imoova Holiday Optimiser",
   description:
     "Find the cheapest campervan road trips across Europe. Free Imoova relocations matched with budget flights.",
 };
@@ -29,7 +29,7 @@ export default function RootLayout({
                 &#x1F690;
               </span>
               <span className="text-lg font-bold text-text">
-                Imoova <span className="text-accent">Holiday Optimizer</span>
+                Imoova <span className="text-accent">Holiday Optimiser</span>
               </span>
             </div>
             <a

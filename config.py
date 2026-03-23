@@ -1,5 +1,5 @@
 """
-Configuration constants for the Imoova Campervan Holiday Optimizer.
+Configuration constants for the Imoova Campervan Holiday Optimiser.
 Airport mappings, date ranges, file paths, and rate limits.
 """
 

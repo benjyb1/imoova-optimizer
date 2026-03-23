@@ -1,5 +1,5 @@
 """
-Job manager for the Imoova Holiday Optimizer backend.
+Job manager for the Imoova Holiday Optimiser backend.
 Manages search jobs in-memory with WebSocket notification support.
 """
 from __future__ import annotations

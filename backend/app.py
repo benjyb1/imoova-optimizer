@@ -1,5 +1,5 @@
 """
-FastAPI application for the Imoova Holiday Optimizer backend.
+FastAPI application for the Imoova Holiday Optimiser backend.
 REST endpoints for job management + WebSocket for live progress.
 """
 from __future__ import annotations
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # ── App setup ─────────────────────────────────────────────────
 
 app = FastAPI(
-    title="Imoova Holiday Optimizer",
+    title="Imoova Holiday Optimiser",
     version="1.0.0",
     description="Find cheap campervan relocation holidays with flight prices.",
 )

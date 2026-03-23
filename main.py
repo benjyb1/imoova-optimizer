@@ -1,5 +1,5 @@
 """
-Imoova Campervan Holiday Optimizer
+Imoova Campervan Holiday Optimiser
 ===================================
 Finds the cheapest campervan holidays by combining Imoova relocation deals
 with real flight prices from Google Flights (via fast-flights).
@@ -21,7 +21,7 @@ import config
 
 def main():
     print("=" * 60)
-    print("  Imoova Campervan Holiday Optimizer")
+    print("  Imoova Campervan Holiday Optimiser")
     print("=" * 60)
     print()
     print(f"  Travel window: {config.TRAVEL_WINDOW_START} to {config.TRAVEL_WINDOW_END}")

@@ -1,5 +1,5 @@
 """
-Configuration constants for the Imoova Campervan Holiday Optimizer backend.
+Configuration constants for the Imoova Campervan Holiday Optimiser backend.
 Airport mappings, city metadata, and rate limits.
 """
 from __future__ import annotations

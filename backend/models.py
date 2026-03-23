@@ -1,5 +1,5 @@
 """
-Pydantic models for the Imoova Holiday Optimizer API.
+Pydantic models for the Imoova Holiday Optimiser API.
 """
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
