@@ -7,7 +7,7 @@ services:
     plan: free
     envVars:
       - key: CORS_ORIGINS
-        value: https://frontend-kappa-orpin-79.vercel.app,http://localhost:3001
+        value: https://imoova-optimiser.vercel.app,http://localhost:3001
       - key: SERPAPI_KEY
         value: ""
       - key: SEARCHAPI_KEY
