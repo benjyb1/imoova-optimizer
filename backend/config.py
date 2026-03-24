@@ -14,12 +14,12 @@ AUD_TO_GBP = 0.51
 
 # ── London airports ───────────────────────────────────────────
 LONDON_AIRPORTS = ["LHR", "LGW", "STN", "LTN", "SEN"]
-LONDON_PRIORITY_AIRPORTS = ["STN", "LGW"]
+LONDON_PRIORITY_AIRPORTS = ["STN", "LGW", "LHR", "LTN"]
 
 # ── City -> IATA airport codes ────────────────────────────────
 CITY_AIRPORTS: Dict[str, List[str]] = {
     # UK
-    "London": LONDON_PRIORITY_AIRPORTS,  # STN+LGW only (covers 90%+ of cheap flights)
+    "London": LONDON_PRIORITY_AIRPORTS,
     "Manchester": ["MAN"],
     "Birmingham": ["BHX"],
     "Edinburgh": ["EDI"],
