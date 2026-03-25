@@ -1,4 +1,4 @@
-# Imoova Holiday Optimizer — Web App Design
+# Imoova Holiday Optimiser — Web App Design
 
 ## Overview
 
@@ -128,7 +128,7 @@ When the user's home city matches a deal's pickup or dropoff city:
 ## Project Structure
 
 ```
-imoova-optimizer/
+imoova-optimiser/
 ├── backend/                    # FastAPI Python backend
 │   ├── Dockerfile
 │   ├── requirements.txt

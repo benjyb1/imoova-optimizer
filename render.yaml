@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: imoova-optimizer-api
+    name: imoova-optimiser-api
     runtime: docker
     dockerfilePath: backend/Dockerfile
     dockerContext: backend

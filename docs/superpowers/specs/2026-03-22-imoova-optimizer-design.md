@@ -27,7 +27,7 @@ Sequential pipeline orchestrated by `main.py`:
 ### Project Structure
 
 ```
-imoova-optimizer/
+imoova-optimiser/
 ├── .env.example
 ├── .env                      # API keys (gitignored)
 ├── main.py                   # Orchestrator
