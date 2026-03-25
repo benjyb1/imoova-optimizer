@@ -30,6 +30,7 @@ export default function SearchForm({ onSearch }: SearchFormProps) {
   const [minDays, setMinDays] = useState(5);
   const [maxDays, setMaxDays] = useState(10);
   const [minSeats, setMinSeats] = useState<number | null>(null);
+  const [numPeople, setNumPeople] = useState(1);
   const [earliestDeparture, setEarliestDeparture] = useState(
     defaultEarliestDeparture
   );
@@ -44,6 +45,7 @@ export default function SearchForm({ onSearch }: SearchFormProps) {
       min_days: minDays,
       max_days: maxDays,
       min_seats: minSeats,
+      num_people: numPeople,
       earliest_departure: earliestDeparture,
       latest_return: latestReturn,
     });
@@ -146,6 +148,37 @@ export default function SearchForm({ onSearch }: SearchFormProps) {
               <option value="4">4+</option>
               <option value="5">5+</option>
             </select>
+          </div>
+
+          {/* Number of people */}
+          <div>
+            <label className="mb-2 block text-sm font-medium text-text">
+              Number of travellers
+            </label>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setNumPeople(Math.max(1, numPeople - 1))}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-lg
+                  font-medium text-text-muted transition-colors hover:border-primary hover:text-primary"
+              >
+                &minus;
+              </button>
+              <span className="w-8 text-center text-lg font-semibold text-text">
+                {numPeople}
+              </span>
+              <button
+                type="button"
+                onClick={() => setNumPeople(Math.min(10, numPeople + 1))}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-lg
+                  font-medium text-text-muted transition-colors hover:border-primary hover:text-primary"
+              >
+                +
+              </button>
+              <span className="text-xs text-text-muted">
+                Van hire cost split between travellers
+              </span>
+            </div>
           </div>
 
           {/* Date pickers */}

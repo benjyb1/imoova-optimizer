@@ -15,6 +15,18 @@ export interface SearchRequest {
   min_seats?: number | null;
   earliest_departure?: string; // YYYY-MM-DD
   latest_return?: string; // YYYY-MM-DD
+  num_people?: number; // number of travellers (affects per-person cost)
+}
+
+// ── Saved search (localStorage) ─────────────────────────────
+
+export interface SavedSearch {
+  id: string;
+  request: SearchRequest;
+  results: EnrichedDeal[];
+  savedAt: number; // unix timestamp ms
+  completeCount: number;
+  totalCount: number;
 }
 
 // ── Flight result ────────────────────────────────────────────

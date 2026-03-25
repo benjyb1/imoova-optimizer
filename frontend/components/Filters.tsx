@@ -28,19 +28,26 @@ export function getDefaultFilters(): FilterState {
   };
 }
 
+function perPersonPrice(r: EnrichedDeal, numPeople: number): number | null {
+  if (r.total_price_gbp === null) return null;
+  return (
+    (r.total_price_gbp - r.deal.imoova_price_gbp) +
+    r.deal.imoova_price_gbp / numPeople
+  );
+}
+
 export function applyFilters(
   results: EnrichedDeal[],
-  filters: FilterState
+  filters: FilterState,
+  numPeople: number = 1
 ): EnrichedDeal[] {
   let filtered = results.filter((r) => {
     // Incomplete filter
     if (!filters.showIncomplete && r.total_price_gbp === null) return false;
 
-    // Max price filter
-    if (
-      r.total_price_gbp !== null &&
-      r.total_price_gbp > filters.maxPrice
-    )
+    // Max price filter (using per-person price)
+    const pp = perPersonPrice(r, numPeople);
+    if (pp !== null && pp > filters.maxPrice)
       return false;
 
     // Country filter — check both pickup and dropoff countries
@@ -59,7 +66,7 @@ export function applyFilters(
   filtered.sort((a, b) => {
     switch (filters.sort) {
       case "price":
-        return (a.total_price_gbp ?? 9999) - (b.total_price_gbp ?? 9999);
+        return (perPersonPrice(a, numPeople) ?? 9999) - (perPersonPrice(b, numPeople) ?? 9999);
       case "departure":
         return a.deal.pickup_date.localeCompare(b.deal.pickup_date);
       case "duration":

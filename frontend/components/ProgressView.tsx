@@ -6,6 +6,7 @@ import ResultCard from "./ResultCard";
 interface ProgressViewProps {
   progress: SearchProgress;
   results: EnrichedDeal[];
+  numPeople?: number;
 }
 
 function formatEta(seconds: number): string {
@@ -31,7 +32,7 @@ function getStepLabel(step: string): string {
   }
 }
 
-export default function ProgressView({ progress, results }: ProgressViewProps) {
+export default function ProgressView({ progress, results, numPeople = 1 }: ProgressViewProps) {
   const progressPercent =
     progress.total > 0
       ? Math.round((progress.searched / progress.total) * 100)
@@ -124,7 +125,7 @@ export default function ProgressView({ progress, results }: ProgressViewProps) {
               .sort((a, b) => (a.total_price_gbp ?? 999) - (b.total_price_gbp ?? 999))
               .slice(0, 6)
               .map((deal, i) => (
-                <ResultCard key={i} deal={deal} />
+                <ResultCard key={i} deal={deal} numPeople={numPeople} />
               ))}
           </div>
         </div>

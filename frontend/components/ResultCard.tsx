@@ -5,6 +5,7 @@ import { getFlagEmoji } from "@/lib/countries";
 
 interface ResultCardProps {
   deal: EnrichedDeal;
+  numPeople?: number;
 }
 
 function formatDate(dateStr: string): string {
@@ -69,9 +70,18 @@ function FlightLine({
   );
 }
 
-export default function ResultCard({ deal }: ResultCardProps) {
+export default function ResultCard({ deal, numPeople = 1 }: ResultCardProps) {
   const { deal: info, total_price_gbp } = deal;
   const isIncomplete = total_price_gbp === null;
+
+  // Per-person price: flights are per person, van hire is split
+  const perPersonPrice =
+    total_price_gbp !== null
+      ? Math.round(
+          (total_price_gbp - info.imoova_price_gbp) +
+          info.imoova_price_gbp / numPeople
+        )
+      : null;
 
   const pickupFlag = getFlagEmoji(info.pickup_country);
   const dropoffFlag = getFlagEmoji(info.dropoff_country);
@@ -87,7 +97,12 @@ export default function ResultCard({ deal }: ResultCardProps) {
         {isIncomplete ? (
           <span className="text-sm font-normal">N/A</span>
         ) : (
-          <span>&pound;{Math.round(total_price_gbp!)}</span>
+          <span>
+            &pound;{perPersonPrice}
+            {numPeople > 1 && (
+              <span className="text-xs font-normal opacity-80">/pp</span>
+            )}
+          </span>
         )}
       </div>
 
@@ -138,6 +153,11 @@ export default function ResultCard({ deal }: ResultCardProps) {
       {/* Imoova price */}
       <div className="mb-4 text-sm text-text-muted">
         Imoova relocation: &pound;{Math.round(info.imoova_price_gbp)}
+        {numPeople > 1 && (
+          <span className="text-primary">
+            {" "}(&pound;{Math.round(info.imoova_price_gbp / numPeople)}/pp)
+          </span>
+        )}
       </div>
 
       {/* Action buttons */}
