@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
 
 from playwright.async_api import async_playwright, Page, TimeoutError as PlaywrightTimeout
@@ -315,9 +315,16 @@ def filter_deals(
         except (ValueError, TypeError):
             continue
 
-        if depart < earliest_departure:
-            continue
-        if deliver > latest_return:
+        # Calculate the valid pickup window for this deal, constrained by
+        # user's availability. Pickup can't be before depart or before the
+        # user is free; dropoff (pickup + drive_days) can't exceed deliver
+        # or latest_return.
+        window_start = max(depart, earliest_departure)
+        window_end = min(
+            deliver - timedelta(days=days),
+            latest_return - timedelta(days=days),
+        )
+        if window_start > window_end:
             continue
 
         if min_seats is not None and deal["seats"] < min_seats:

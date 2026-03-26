@@ -108,9 +108,13 @@ export default function SearchForm({ onSearch }: SearchFormProps) {
               <input
                 type="range"
                 min={1}
-                max={maxDays}
+                max={25}
                 value={minDays}
-                onChange={(e) => setMinDays(Number(e.target.value))}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setMinDays(v);
+                  if (v > maxDays) setMaxDays(v);
+                }}
                 className="flex-1 accent-primary"
               />
               <span className="w-6 text-center text-sm font-medium">{minDays}</span>
@@ -119,10 +123,14 @@ export default function SearchForm({ onSearch }: SearchFormProps) {
               <span className="text-xs text-text-muted">Max</span>
               <input
                 type="range"
-                min={minDays}
-                max={21}
+                min={1}
+                max={25}
                 value={maxDays}
-                onChange={(e) => setMaxDays(Number(e.target.value))}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setMaxDays(v);
+                  if (v < minDays) setMinDays(v);
+                }}
                 className="flex-1 accent-primary"
               />
               <span className="w-6 text-center text-sm font-medium">{maxDays}</span>

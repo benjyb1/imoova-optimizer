@@ -246,14 +246,17 @@ async def run_job(job_id: str) -> None:
                 "eta_seconds": round(remaining, 1),
             })
 
-        await presearch_unique_routes(filtered, home_airports, on_route_progress)
+        await presearch_unique_routes(
+            filtered, home_airports, earliest, latest, on_route_progress
+        )
 
         # ── Step 5: Enrich each deal ──────────────────────────
         total = len(filtered)
         for i, deal in enumerate(filtered, 1):
             try:
                 enriched = await search_flights_for_deal(
-                    deal, request.home_city, home_airports
+                    deal, request.home_city, home_airports,
+                    earliest, latest,
                 )
                 job["results"].append(enriched)
                 if enriched.get("is_complete"):
