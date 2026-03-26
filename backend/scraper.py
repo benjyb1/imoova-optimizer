@@ -254,6 +254,7 @@ async def _parse_table(page: Page) -> List[Dict[str, Any]]:
             depart_date = parse_date(depart_str)
             deliver_date = parse_date(deliver_str)
             total_days = parse_days(days_str)
+            drive_days_only = parse_drive_days_only(days_str)
 
             if not depart_date or not deliver_date:
                 continue
@@ -271,10 +272,10 @@ async def _parse_table(page: Page) -> List[Dict[str, Any]]:
                 "dropoff_city": dropoff,
                 "depart_date": depart_date.isoformat(),
                 "deliver_date": deliver_date.isoformat(),
-                "drive_days": total_days,
+                "drive_days": drive_days_only if drive_days_only > 0 else (deliver_date - depart_date).days,
                 "vehicle": vehicle,
                 "rate_raw": rate_raw,
-                "rate_gbp": parse_rate_to_gbp(rate_raw, total_days),
+                "rate_gbp": parse_rate_to_gbp(rate_raw, drive_days_only if drive_days_only > 0 else (deliver_date - depart_date).days),
                 "seats": parse_seats(seats_str),
                 "fuel": fuel,
                 "ferry": ferry,

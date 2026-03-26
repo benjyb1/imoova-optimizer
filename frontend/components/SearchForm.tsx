@@ -13,17 +13,23 @@ function formatDate(d: Date): string {
 }
 
 function defaultEarliestDeparture(): string {
-  const fallback = new Date();
-  fallback.setDate(fallback.getDate() + 3);
-  const target = new Date("2026-04-03");
-  return formatDate(target < fallback ? fallback : target);
+  const today = new Date();
+  const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  // If today is 2026-04-04 or later, the hardcoded defaults are stale
+  if (cutoff >= new Date(2026, 3, 4)) {
+    return formatDate(today);
+  }
+  return "2026-04-03";
 }
 
 function defaultLatestReturn(): string {
-  const fallback = new Date();
-  fallback.setDate(fallback.getDate() + 28);
-  const target = new Date("2026-04-14");
-  return formatDate(target < fallback ? fallback : target);
+  const today = new Date();
+  const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  // If today is 2026-04-04 or later, the hardcoded defaults are stale
+  if (cutoff >= new Date(2026, 3, 4)) {
+    return "";
+  }
+  return "2026-04-14";
 }
 
 export default function SearchForm({ onSearch }: SearchFormProps) {
@@ -113,9 +119,8 @@ export default function SearchForm({ onSearch }: SearchFormProps) {
                 max={25}
                 value={minDays}
                 onChange={(e) => {
-                  const v = Number(e.target.value);
+                  const v = Math.min(Number(e.target.value), maxDays);
                   setMinDays(v);
-                  if (v > maxDays) setMaxDays(v);
                 }}
                 className="flex-1 accent-primary"
               />
@@ -129,9 +134,8 @@ export default function SearchForm({ onSearch }: SearchFormProps) {
                 max={25}
                 value={maxDays}
                 onChange={(e) => {
-                  const v = Number(e.target.value);
+                  const v = Math.max(Number(e.target.value), minDays);
                   setMaxDays(v);
-                  if (v < minDays) setMinDays(v);
                 }}
                 className="flex-1 accent-primary"
               />

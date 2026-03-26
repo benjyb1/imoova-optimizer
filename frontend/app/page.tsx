@@ -90,6 +90,7 @@ export default function Home() {
   }, [refreshSearch.state, isRefreshing, pastRequest, refreshSearch.results]);
 
   const handleSearch = (params: SearchRequest) => {
+    clearInProgress(); // discard any stale in-progress cache from a previous search
     setCurrentRequest(params);
     setViewingPastSearch(false);
     setActiveHistoryId(null);

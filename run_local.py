@@ -9,8 +9,15 @@ import os
 import sys
 import time
 
-# Backend modules live in ./backend and import 'config' from root
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
+# Ensure root dir is first on path so 'import config' finds root config.py
+# (not backend/config.py which is missing OUTPUT_PATH etc.)
+_root = os.path.dirname(os.path.abspath(__file__))
+if _root not in sys.path:
+    sys.path.insert(0, _root)
+# Remove backend/ from path if present (would shadow root config)
+_backend = os.path.join(_root, "backend")
+if _backend in sys.path:
+    sys.path.remove(_backend)
 
 from datetime import date
 
@@ -129,7 +136,7 @@ async def main():
                   f"(~{eta:.0f}s remaining)    ", end="", flush=True)
 
     await presearch_unique_routes(
-        filtered, HOME_AIRPORTS, EARLIEST_DEPARTURE, LATEST_RETURN, on_progress
+        filtered, HOME_CITY, HOME_AIRPORTS, EARLIEST_DEPARTURE, LATEST_RETURN, on_progress
     )
     print()
     print()

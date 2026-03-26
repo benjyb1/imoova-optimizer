@@ -373,3 +373,14 @@ def is_london(city_name: str) -> bool:
     if not city_name:
         return False
     return "london" in city_name.strip().lower()
+
+
+def cities_match(city_a: str, city_b: str) -> bool:
+    """Check if two city names refer to the same place by comparing airports."""
+    if not city_a or not city_b:
+        return False
+    airports_a = get_airports_for_city(city_a)
+    airports_b = get_airports_for_city(city_b)
+    if airports_a and airports_b:
+        return bool(set(airports_a) & set(airports_b))
+    return city_a.strip().lower() == city_b.strip().lower()

@@ -461,12 +461,12 @@ def _filter_by_departure_time(
 ) -> List[FlightResult]:
     """
     Filter flights to those departing between min_hour and max_hour (inclusive).
-    Flights with unparseable times are kept (benefit of the doubt).
+    This is a HARD filter: flights with unparseable departure times are excluded.
     """
     filtered = []
     for f in flights:
         hour = _parse_departure_hour(f.departure_time)
-        if hour is None or (min_hour <= hour <= max_hour):
+        if hour is not None and min_hour <= hour <= max_hour:
             filtered.append(f)
     return filtered
 
@@ -610,12 +610,10 @@ async def search_flights_for_deal(
     if home_is_pickup:
         pass
     elif pickup_is_uk and not home_is_pickup:
-        # For UK legs, just use the first pickup date (train estimates
-        # don't vary by date)
-        if pickup_dates:
-            outbound_uk_transport = await _search_uk_leg(
-                pickup_city, "from_home", pickup_dates[0], home_airports
-            )
+        # UK domestic leg — get train estimate (fixed price, doesn't vary by date)
+        outbound_uk_transport = await _search_uk_leg(
+            pickup_city, "from_home", pickup_dates[0] if pickup_dates else date.today(), home_airports
+        )
     else:
         pickup_airports = config.get_airports_for_city(pickup_city)
         if not pickup_airports:
@@ -626,7 +624,7 @@ async def search_flights_for_deal(
                 to_airports=pickup_airports,
                 dates=outbound_date_strs,
             )
-            # Filter: outbound flights must depart between 5am and 6pm
+            # HARD filter: outbound flights must depart between 5am and 6pm
             outbound_flights = _filter_by_departure_time(outbound_flights, 5, 18)
             if not outbound_flights:
                 warnings.append(f"No outbound flights found to {pickup_city}")
@@ -638,10 +636,10 @@ async def search_flights_for_deal(
     if home_is_dropoff:
         pass
     elif dropoff_is_uk and not home_is_dropoff:
-        if dropoff_dates:
-            return_uk_transport = await _search_uk_leg(
-                dropoff_city, "to_home", dropoff_dates[0], home_airports
-            )
+        # UK domestic leg — get train estimate (fixed price, doesn't vary by date)
+        return_uk_transport = await _search_uk_leg(
+            dropoff_city, "to_home", dropoff_dates[0] if dropoff_dates else date.today(), home_airports
+        )
     else:
         dropoff_airports = config.get_airports_for_city(dropoff_city)
         if not dropoff_airports:
@@ -652,75 +650,92 @@ async def search_flights_for_deal(
                 to_airports=home_airports,
                 dates=return_date_strs,
             )
-            # Filter: return flights must depart after 7am
+            # HARD filter: return flights must depart after 7am
             return_flights = _filter_by_departure_time(return_flights, 7, 23)
             if not return_flights:
                 warnings.append(f"No return flights found from {dropoff_city}")
 
-    # ── Find the cheapest pair ────────────────────────────────
-    # Group flights by search_date so we can match outbound date
-    # to its corresponding return date.
+    # ── Find the cheapest PAIRED combination ─────────────────
+    # For each pickup date P, the dropoff date is P + drive_days.
+    # We must never mix an outbound flight from one pickup date
+    # with a return flight that assumes a different pickup date.
     cheapest_out: Optional[FlightResult] = None
     cheapest_ret: Optional[FlightResult] = None
     best_pickup_date: Optional[date] = None
     best_dropoff_date: Optional[date] = None
 
-    needs_outbound = not home_is_pickup and not outbound_uk_transport
-    needs_return = not home_is_dropoff and not return_uk_transport
+    # Determine the cost for each leg type:
+    #   - home match: 0 cost, no flight needed
+    #   - UK transport: fixed cost (doesn't vary by date)
+    #   - flight: variable cost, must be paired by date
+    outbound_cost_fixed = 0.0  # cost when outbound is home or UK transport
+    if outbound_uk_transport:
+        outbound_cost_fixed = outbound_uk_transport.get("price_gbp", 0)
 
-    if needs_outbound and needs_return:
-        # Both legs are flights — find cheapest pair
-        out_by_date: Dict[str, FlightResult] = {}
+    return_cost_fixed = 0.0  # cost when return is home or UK transport
+    if return_uk_transport:
+        return_cost_fixed = return_uk_transport.get("price_gbp", 0)
+
+    needs_outbound_flight = not home_is_pickup and not outbound_uk_transport
+    needs_return_flight = not home_is_dropoff and not return_uk_transport
+
+    # Build cheapest-flight-per-date lookup tables
+    out_by_date: Dict[str, FlightResult] = {}
+    if needs_outbound_flight:
         for f in outbound_flights:
             if f.search_date not in out_by_date or f.price_gbp < out_by_date[f.search_date].price_gbp:
                 out_by_date[f.search_date] = f
 
-        ret_by_date: Dict[str, FlightResult] = {}
+    ret_by_date: Dict[str, FlightResult] = {}
+    if needs_return_flight:
         for f in return_flights:
             if f.search_date not in ret_by_date or f.price_gbp < ret_by_date[f.search_date].price_gbp:
                 ret_by_date[f.search_date] = f
 
-        best_total = float("inf")
-        for pickup_d in pickup_dates:
-            out_key = pickup_d.isoformat()
-            ret_key = (pickup_d + timedelta(days=drive_days_count)).isoformat()
+    # Iterate pickup dates and find the pair with the lowest total cost.
+    # Each pickup date P uniquely determines the dropoff date P + drive_days.
+    best_total = float("inf")
+    for pickup_d in pickup_dates:
+        out_key = pickup_d.isoformat()
+        ret_key = (pickup_d + timedelta(days=drive_days_count)).isoformat()
+
+        # Determine outbound cost for this pickup date
+        if home_is_pickup:
+            out_cost = 0.0
+            out_flight = None
+        elif outbound_uk_transport:
+            out_cost = outbound_cost_fixed
+            out_flight = None
+        else:
             out_f = out_by_date.get(out_key)
+            if not out_f:
+                continue  # no outbound flight for this date — skip
+            out_cost = out_f.price_gbp
+            out_flight = out_f
+
+        # Determine return cost for this pickup date
+        if home_is_dropoff:
+            ret_cost = 0.0
+            ret_flight = None
+        elif return_uk_transport:
+            ret_cost = return_cost_fixed
+            ret_flight = None
+        else:
             ret_f = ret_by_date.get(ret_key)
-            if out_f and ret_f:
-                pair_total = out_f.price_gbp + ret_f.price_gbp
-                if pair_total < best_total:
-                    best_total = pair_total
-                    cheapest_out = out_f
-                    cheapest_ret = ret_f
-                    best_pickup_date = pickup_d
-                    best_dropoff_date = pickup_d + timedelta(days=drive_days_count)
-    else:
-        # At least one leg is free (home city or UK transport).
-        # Just pick the cheapest flight for whichever leg needs one.
-        if needs_outbound and outbound_flights:
-            outbound_flights.sort(key=lambda f: f.price_gbp)
-            cheapest_out = outbound_flights[0]
-            best_pickup_date = date.fromisoformat(cheapest_out.search_date)
-            best_dropoff_date = best_pickup_date + timedelta(days=drive_days_count)
-        elif not needs_outbound and pickup_dates:
-            # Outbound is free — pick the return date that gives cheapest return
-            if needs_return and return_flights:
-                return_flights.sort(key=lambda f: f.price_gbp)
-                cheapest_ret = return_flights[0]
-                best_dropoff_date = date.fromisoformat(cheapest_ret.search_date)
-                best_pickup_date = best_dropoff_date - timedelta(days=drive_days_count)
+            if not ret_f:
+                continue  # no return flight for this date — skip
+            ret_cost = ret_f.price_gbp
+            ret_flight = ret_f
 
-        if needs_return and not cheapest_ret and return_flights:
-            # We know the pickup date from outbound — find matching return
-            if best_pickup_date:
-                target_ret = (best_pickup_date + timedelta(days=drive_days_count)).isoformat()
-                matching = [f for f in return_flights if f.search_date == target_ret]
-                if matching:
-                    matching.sort(key=lambda f: f.price_gbp)
-                    cheapest_ret = matching[0]
-                    best_dropoff_date = best_pickup_date + timedelta(days=drive_days_count)
+        pair_total = out_cost + ret_cost
+        if pair_total < best_total:
+            best_total = pair_total
+            cheapest_out = out_flight
+            cheapest_ret = ret_flight
+            best_pickup_date = pickup_d
+            best_dropoff_date = pickup_d + timedelta(days=drive_days_count)
 
-    # Fall back to first pickup date if nothing found
+    # Fall back to first pickup date if no valid pair was found
     if not best_pickup_date and pickup_dates:
         best_pickup_date = pickup_dates[0]
         best_dropoff_date = best_pickup_date + timedelta(days=drive_days_count)
@@ -802,6 +817,7 @@ async def search_flights_for_deal(
 
 async def presearch_unique_routes(
     filtered_deals: List[Dict[str, Any]],
+    home_city: str,
     home_airports: List[str],
     earliest_departure: date,
     latest_return: date,
@@ -830,8 +846,8 @@ async def presearch_unique_routes(
             (d + timedelta(days=drive_days_count)).isoformat() for d in pickup_dates
         ]
 
-        # Outbound: Home -> Pickup City
-        if not config.cities_match("", pickup):
+        # Outbound: Home -> Pickup City (skip if home IS the pickup city)
+        if not config.cities_match(home_city, pickup):
             airports = config.get_airports_for_city(pickup)
             if airports:
                 for apt in airports:
@@ -839,13 +855,14 @@ async def presearch_unique_routes(
                         for d in outbound_date_strs:
                             unique_searches.add((home_apt, apt, d))
 
-        # Return: Dropoff City -> Home
-        airports = config.get_airports_for_city(dropoff)
-        if airports:
-            for apt in airports:
-                for home_apt in home_airports:
-                    for d in return_date_strs:
-                        unique_searches.add((apt, home_apt, d))
+        # Return: Dropoff City -> Home (skip if home IS the dropoff city)
+        if not config.cities_match(home_city, dropoff):
+            airports = config.get_airports_for_city(dropoff)
+            if airports:
+                for apt in airports:
+                    for home_apt in home_airports:
+                        for d in return_date_strs:
+                            unique_searches.add((apt, home_apt, d))
 
     # Filter out already-cached routes
     uncached: List[Tuple[str, str, str]] = []

@@ -247,7 +247,7 @@ async def run_job(job_id: str) -> None:
             })
 
         await presearch_unique_routes(
-            filtered, home_airports, earliest, latest, on_route_progress
+            filtered, request.home_city, home_airports, earliest, latest, on_route_progress
         )
 
         # ── Step 5: Enrich each deal ──────────────────────────
