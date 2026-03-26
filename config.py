@@ -9,9 +9,9 @@ import os
 
 # ── Travel window ──────────────────────────────────────────────
 TRAVEL_WINDOW_START = date(2026, 4, 3)
-TRAVEL_WINDOW_END = date(2026, 4, 15)
+TRAVEL_WINDOW_END = date(2026, 4, 14)
 MIN_DRIVE_DAYS = 5
-MAX_DRIVE_DAYS = 99  # no hard cap — constrained by TRAVEL_WINDOW_END instead
+MAX_DRIVE_DAYS = 14
 
 # ── Currency conversion (rough, for Imoova rate parsing) ──────
 EUR_TO_GBP = 0.86

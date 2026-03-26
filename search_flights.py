@@ -302,7 +302,7 @@ def search_fast_flights(from_iata: str, to_iata: str, search_date: str) -> list[
                 )
             ],
             trip="one-way",
-            passengers=Passengers(adults=1),
+            passengers=Passengers(adults=2),
             seat="economy",
         )
         encoded = tfs.as_b64()
