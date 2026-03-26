@@ -11,6 +11,9 @@ import {
   loadSearchHistory,
   saveSearch,
   deleteSearch,
+  saveInProgress,
+  loadInProgress,
+  clearInProgress,
 } from "@/lib/searchHistory";
 
 export default function Home() {
@@ -33,15 +36,41 @@ export default function Home() {
   // Current search params (for saving)
   const [currentRequest, setCurrentRequest] = useState<SearchRequest | null>(null);
 
-  // Load history on mount
+  // Load history on mount, and restore any interrupted search
   useEffect(() => {
     setSearchHistory(loadSearchHistory());
+
+    const interrupted = loadInProgress();
+    if (interrupted && interrupted.results.length > 0) {
+      setViewingPastSearch(true);
+      setPastResults(interrupted.results);
+      setPastRequest(interrupted.request);
+      setCurrentRequest(interrupted.request);
+      // Save the partial results to history so they're not lost
+      const saved = saveSearch(interrupted.request, interrupted.results);
+      setSearchHistory(loadSearchHistory());
+      setActiveHistoryId(saved.id);
+      clearInProgress();
+    }
   }, []);
 
-  // Save search when it completes
+  // Cache in-progress results every 100 deals
+  useEffect(() => {
+    if (
+      state === "searching" &&
+      currentRequest &&
+      results.length > 0 &&
+      results.length % 100 === 0
+    ) {
+      saveInProgress(currentRequest, results);
+    }
+  }, [state, results.length, currentRequest]);
+
+  // Save search when it completes, then clear the in-progress cache
   useEffect(() => {
     if (state === "complete" && currentRequest && results.length > 0) {
       const saved = saveSearch(currentRequest, results);
+      clearInProgress();
       setSearchHistory(loadSearchHistory());
       setActiveHistoryId(saved.id);
     }

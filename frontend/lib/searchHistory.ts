@@ -1,6 +1,7 @@
 import { SavedSearch, SearchRequest, EnrichedDeal } from "./types";
 
 const STORAGE_KEY = "imoova-searches";
+const IN_PROGRESS_KEY = "imoova-in-progress";
 const MAX_SAVED = 20;
 
 export function loadSearchHistory(): SavedSearch[] {
@@ -55,6 +56,42 @@ export function deleteSearch(id: string): void {
   const history = loadSearchHistory();
   const filtered = history.filter((s) => s.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+}
+
+// ── In-progress cache (saved every 100 results during a search) ──
+
+export function saveInProgress(
+  request: SearchRequest,
+  results: EnrichedDeal[]
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(
+      IN_PROGRESS_KEY,
+      JSON.stringify({ request, results, savedAt: Date.now() })
+    );
+  } catch {
+    // localStorage full or unavailable — ignore
+  }
+}
+
+export function loadInProgress(): {
+  request: SearchRequest;
+  results: EnrichedDeal[];
+} | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(IN_PROGRESS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function clearInProgress(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(IN_PROGRESS_KEY);
 }
 
 function generateId(): string {
