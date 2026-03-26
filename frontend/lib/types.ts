@@ -102,12 +102,17 @@ export interface WSErrorMessage {
   message: string;
 }
 
+export interface WSPingMessage {
+  type: "ping";
+}
+
 export type WSMessage =
   | WSStatusMessage
   | WSProgressMessage
   | WSResultMessage
   | WSCompleteMessage
-  | WSErrorMessage;
+  | WSErrorMessage
+  | WSPingMessage;
 
 // ── Search state machine ─────────────────────────────────────
 
