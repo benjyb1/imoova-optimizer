@@ -5,6 +5,7 @@ Saves results to an Excel spreadsheet.
 Usage: python run_local.py
 """
 import asyncio
+import json
 import os
 import sys
 import time
@@ -39,6 +40,31 @@ LATEST_RETURN = date(2026, 4, 14)
 MIN_DAYS = 5
 MAX_DAYS = 14
 NUM_PEOPLE = 2
+
+# ── Cache paths ─────────────────────────────────────────────
+CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+CACHE_DEALS = os.path.join(CACHE_DIR, "cache_filtered_deals.json")
+CACHE_ROUTES = os.path.join(CACHE_DIR, "cache_routes_done.flag")
+CACHE_ENRICHED = os.path.join(CACHE_DIR, "cache_enriched_partial.json")
+
+
+def _save_cache(path: str, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f)
+
+
+def _load_cache(path: str):
+    if os.path.exists(path):
+        with open(path) as f:
+            return json.load(f)
+    return None
+
+
+def _clear_all_caches():
+    for p in [CACHE_DEALS, CACHE_ROUTES, CACHE_ENRICHED]:
+        if os.path.exists(p):
+            os.remove(p)
 
 
 def _to_spreadsheet_format(backend_result: dict, num_people: int) -> dict:
@@ -100,16 +126,22 @@ async def main():
     print(f"  Travellers: {NUM_PEOPLE}")
     print()
 
-    # Step 1: Scrape
-    print("[1/4] Scraping Imoova deals...")
-    raw_deals = await scrape_all_deals()
-    print(f"  Found {len(raw_deals)} raw deals")
+    # Step 1: Scrape + Filter (cached)
+    cached_deals = _load_cache(CACHE_DEALS)
+    if cached_deals:
+        filtered = cached_deals
+        print(f"[1/4] Using cached deals ({len(filtered)} matches)")
+    else:
+        print("[1/4] Scraping Imoova deals...")
+        raw_deals = await scrape_all_deals()
+        print(f"  Found {len(raw_deals)} raw deals")
 
-    # Step 2: Filter
-    filtered = filter_deals(
-        raw_deals, EARLIEST_DEPARTURE, LATEST_RETURN, MIN_DAYS, MAX_DAYS
-    )
-    print(f"  {len(filtered)} match your constraints")
+        filtered = filter_deals(
+            raw_deals, EARLIEST_DEPARTURE, LATEST_RETURN, MIN_DAYS, MAX_DAYS
+        )
+        print(f"  {len(filtered)} match your constraints")
+        _save_cache(CACHE_DEALS, filtered)
+
     print()
 
     if not filtered:
@@ -124,63 +156,84 @@ async def main():
         print(f"    ... and {len(filtered) - 5} more")
     print()
 
-    # Step 3: Pre-search unique flight routes
-    print("[2/4] Pre-searching unique flight routes...")
-    search_start = time.time()
+    # Step 2: Pre-search unique flight routes (cached)
+    if os.path.exists(CACHE_ROUTES):
+        print("[2/4] Route pre-search already done (cached)")
+    else:
+        print("[2/4] Pre-searching unique flight routes...")
+        search_start = time.time()
 
-    async def on_progress(searched, total):
-        elapsed = time.time() - search_start
-        if searched > 0:
-            eta = (total - searched) * (elapsed / searched)
-            print(f"\r  {searched}/{total} routes searched "
-                  f"(~{eta:.0f}s remaining)    ", end="", flush=True)
+        async def on_progress(searched, total):
+            elapsed = time.time() - search_start
+            if searched > 0:
+                eta = (total - searched) * (elapsed / searched)
+                print(f"\r  {searched}/{total} routes searched "
+                      f"(~{eta:.0f}s remaining)    ", end="", flush=True)
 
-    await presearch_unique_routes(
-        filtered, HOME_CITY, HOME_AIRPORTS, EARLIEST_DEPARTURE, LATEST_RETURN, on_progress
-    )
+        await presearch_unique_routes(
+            filtered, HOME_CITY, HOME_AIRPORTS, EARLIEST_DEPARTURE, LATEST_RETURN, on_progress
+        )
+        # Mark routes as done
+        _save_cache(CACHE_ROUTES, True)
+        print()
     print()
-    print()
 
-    # Step 4: Enrich each deal with flight pairs
-    print("[3/4] Finding cheapest flight pairs...")
-    enriched = []
+    # Step 3: Enrich each deal with flight pairs (resumable)
+    cached_partial = _load_cache(CACHE_ENRICHED)
+    enriched = cached_partial if cached_partial else []
+    start_idx = len(enriched)
     total = len(filtered)
 
-    for i, deal in enumerate(filtered, 1):
-        if i % 10 == 1 or i == total:
-            print(f"  [{i}/{total}] {deal['pickup_city']} -> {deal['dropoff_city']}")
+    if start_idx >= total:
+        print(f"[3/4] All {total} deals already enriched (cached)")
+    else:
+        if start_idx > 0:
+            print(f"[3/4] Resuming flight pairs from deal {start_idx + 1}/{total}...")
+        else:
+            print("[3/4] Finding cheapest flight pairs...")
 
-        try:
-            result = await search_flights_for_deal(
-                deal, HOME_CITY, HOME_AIRPORTS,
-                EARLIEST_DEPARTURE, LATEST_RETURN,
-            )
-            enriched.append(_to_spreadsheet_format(result, NUM_PEOPLE))
-        except Exception as e:
-            print(f"    Error: {e}")
-            enriched.append({
-                "deal": {
-                    "pickup_city": deal.get("pickup_city", ""),
-                    "dropoff_city": deal.get("dropoff_city", ""),
-                    "depart_date": deal.get("depart_date", ""),
-                    "deliver_date": deal.get("deliver_date", ""),
-                    "drive_days": deal.get("drive_days", 0),
-                    "vehicle": deal.get("vehicle", ""),
-                    "rate_raw": deal.get("rate_raw", ""),
-                    "rate_gbp": deal.get("rate_gbp", 0),
-                    "seats": deal.get("seats", 0),
-                    "deal_url": deal.get("deal_url", ""),
-                },
-                "outbound_flights": [],
-                "return_flights": [],
-                "outbound_uk_transport": None,
-                "return_uk_transport": None,
-                "cheapest_outbound": None,
-                "cheapest_return": None,
-                "total_cost": 9999.0,
-                "is_complete": False,
-                "warnings": [f"Search failed: {e}"],
-            })
+        for i, deal in enumerate(filtered[start_idx:], start_idx + 1):
+            if i % 10 == 1 or i == total:
+                print(f"  [{i}/{total}] {deal['pickup_city']} -> {deal['dropoff_city']}")
+
+            try:
+                result = await search_flights_for_deal(
+                    deal, HOME_CITY, HOME_AIRPORTS,
+                    EARLIEST_DEPARTURE, LATEST_RETURN,
+                )
+                enriched.append(_to_spreadsheet_format(result, NUM_PEOPLE))
+            except Exception as e:
+                print(f"    Error: {e}")
+                enriched.append({
+                    "deal": {
+                        "pickup_city": deal.get("pickup_city", ""),
+                        "dropoff_city": deal.get("dropoff_city", ""),
+                        "depart_date": deal.get("depart_date", ""),
+                        "deliver_date": deal.get("deliver_date", ""),
+                        "drive_days": deal.get("drive_days", 0),
+                        "vehicle": deal.get("vehicle", ""),
+                        "rate_raw": deal.get("rate_raw", ""),
+                        "rate_gbp": deal.get("rate_gbp", 0),
+                        "seats": deal.get("seats", 0),
+                        "deal_url": deal.get("deal_url", ""),
+                    },
+                    "outbound_flights": [],
+                    "return_flights": [],
+                    "outbound_uk_transport": None,
+                    "return_uk_transport": None,
+                    "cheapest_outbound": None,
+                    "cheapest_return": None,
+                    "total_cost": 9999.0,
+                    "is_complete": False,
+                    "warnings": [f"Search failed: {e}"],
+                })
+
+            # Save progress every 10 deals
+            if len(enriched) % 10 == 0:
+                _save_cache(CACHE_ENRICHED, enriched)
+
+        # Final save
+        _save_cache(CACHE_ENRICHED, enriched)
 
     await close_browser()
 
@@ -192,6 +245,8 @@ async def main():
     print("[4/4] Building spreadsheet...")
     path = build_spreadsheet(enriched, [])
     print(f"  Saved to: {path}")
+    _clear_all_caches()
+    print("  Cleared intermediate caches.")
     print()
 
     # Summary
