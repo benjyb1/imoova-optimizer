@@ -13,15 +13,17 @@ function formatDate(d: Date): string {
 }
 
 function defaultEarliestDeparture(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 3);
-  return formatDate(d);
+  const fallback = new Date();
+  fallback.setDate(fallback.getDate() + 3);
+  const target = new Date("2026-04-03");
+  return formatDate(target < fallback ? fallback : target);
 }
 
 function defaultLatestReturn(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 28);
-  return formatDate(d);
+  const fallback = new Date();
+  fallback.setDate(fallback.getDate() + 28);
+  const target = new Date("2026-04-14");
+  return formatDate(target < fallback ? fallback : target);
 }
 
 export default function SearchForm({ onSearch }: SearchFormProps) {
