@@ -228,86 +228,121 @@ async def run_job(job_id: str) -> None:
 
         search_start = time.time()
         total = len(filtered)
+        MAX_RETRIES = 3
+        retry_count = 0
+        deals_processed = 0  # tracks how many we've completed across retries
 
-        try:
-            for i, deal in enumerate(filtered, 1):
-                try:
-                    enriched = await search_flights_for_deal(
-                        deal, request.home_city, home_airports,
-                        earliest, latest,
-                    )
-                    job["results"].append(enriched)
+        while retry_count <= MAX_RETRIES:
+            try:
+                for i, deal in enumerate(filtered, 1):
+                    # Skip deals we already processed before a crash
+                    if i <= deals_processed:
+                        continue
+
+                    try:
+                        enriched = await search_flights_for_deal(
+                            deal, request.home_city, home_airports,
+                            earliest, latest,
+                        )
+                        job["results"].append(enriched)
+                        job["results"].sort(key=lambda x: x.get("total_price_gbp") or 9999)
+                        if enriched.get("is_complete"):
+                            job["complete_results"] += 1
+
+                        job["searched_deals"] = i
+
+                        # Send the result immediately
+                        await _notify(job_id, {
+                            "type": "result",
+                            "deal": enriched,
+                        })
+
+                        # Update progress bar
+                        elapsed = time.time() - search_start
+                        if i > 0:
+                            per_deal = elapsed / i
+                            remaining = (total - i) * per_deal
+                        else:
+                            remaining = 0
+
+                        await _notify(job_id, {
+                            "type": "progress",
+                            "step": "flights",
+                            "searched": i,
+                            "total": total,
+                            "eta_seconds": round(remaining, 1),
+                        })
+
+                        deals_processed = i
+
+                    except Exception as e:
+                        logger.warning("Error enriching deal %s: %s", deal.get("ref", "?"), e)
+                        error_deal = {
+                            "deal": {
+                                "pickup_city": deal.get("pickup_city", ""),
+                                "pickup_country": config.CITY_COUNTRIES.get(deal.get("pickup_city", ""), ""),
+                                "dropoff_city": deal.get("dropoff_city", ""),
+                                "dropoff_country": config.CITY_COUNTRIES.get(deal.get("dropoff_city", ""), ""),
+                                "pickup_date": deal.get("depart_date", ""),
+                                "dropoff_date": deal.get("deliver_date", ""),
+                                "drive_days": deal.get("drive_days", 0),
+                                "vehicle_type": deal.get("vehicle", ""),
+                                "seats": deal.get("seats", 0),
+                                "imoova_price_gbp": deal.get("rate_gbp", 0),
+                                "imoova_url": deal.get("deal_url", ""),
+                            },
+                            "drive_hours": None,
+                            "outbound_flight": None,
+                            "return_flight": None,
+                            "outbound_is_home": False,
+                            "return_is_home": False,
+                            "total_price_gbp": None,
+                            "google_flights_outbound_url": None,
+                            "google_flights_return_url": None,
+                            "is_complete": False,
+                            "warnings": [f"Search failed: {e}"],
+                        }
+                        job["results"].append(error_deal)
+                        job["searched_deals"] = i
+                        deals_processed = i
+
+                # If we get here, we finished all deals successfully
+                break
+
+            except Exception as e:
+                retry_count += 1
+                logger.error(
+                    "Flight search crashed for job %s at deal %d/%d (attempt %d/%d): %s",
+                    job_id, deals_processed, total, retry_count, MAX_RETRIES, e,
+                    exc_info=True,
+                )
+
+                if retry_count > MAX_RETRIES:
+                    # Out of retries — report error but keep partial results
                     job["results"].sort(key=lambda x: x.get("total_price_gbp") or 9999)
-                    if enriched.get("is_complete"):
-                        job["complete_results"] += 1
-
-                    job["searched_deals"] = i
-
-                    # Send the result immediately
+                    job["status"] = "error"
+                    job["error"] = str(e)
+                    job["message"] = f"Flight search failed after {MAX_RETRIES} retries: {e}"
                     await _notify(job_id, {
-                        "type": "result",
-                        "deal": enriched,
+                        "type": "error",
+                        "message": job["message"],
                     })
+                    return
 
-                    # Update progress bar
-                    elapsed = time.time() - search_start
-                    if i > 0:
-                        per_deal = elapsed / i
-                        remaining = (total - i) * per_deal
-                    else:
-                        remaining = 0
-
-                    await _notify(job_id, {
-                        "type": "progress",
-                        "step": "flights",
-                        "searched": i,
-                        "total": total,
-                        "eta_seconds": round(remaining, 1),
-                    })
-
-                except Exception as e:
-                    logger.warning("Error enriching deal %s: %s", deal.get("ref", "?"), e)
-                    error_deal = {
-                        "deal": {
-                            "pickup_city": deal.get("pickup_city", ""),
-                            "pickup_country": config.CITY_COUNTRIES.get(deal.get("pickup_city", ""), ""),
-                            "dropoff_city": deal.get("dropoff_city", ""),
-                            "dropoff_country": config.CITY_COUNTRIES.get(deal.get("dropoff_city", ""), ""),
-                            "pickup_date": deal.get("depart_date", ""),
-                            "dropoff_date": deal.get("deliver_date", ""),
-                            "drive_days": deal.get("drive_days", 0),
-                            "vehicle_type": deal.get("vehicle", ""),
-                            "seats": deal.get("seats", 0),
-                            "imoova_price_gbp": deal.get("rate_gbp", 0),
-                            "imoova_url": deal.get("deal_url", ""),
-                        },
-                        "drive_hours": None,
-                        "outbound_flight": None,
-                        "return_flight": None,
-                        "outbound_is_home": False,
-                        "return_is_home": False,
-                        "total_price_gbp": None,
-                        "google_flights_outbound_url": None,
-                        "google_flights_return_url": None,
-                        "is_complete": False,
-                        "warnings": [f"Search failed: {e}"],
-                    }
-                    job["results"].append(error_deal)
-                    job["searched_deals"] = i
-
-        except Exception as e:
-            # Flight search crashed (rate limit, browser crash, etc.)
-            # Sort whatever we have so far and send error
-            logger.error("Flight search crashed for job %s: %s", job_id, e, exc_info=True)
-            job["results"].sort(key=lambda x: x.get("total_price_gbp") or 9999)
-            job["status"] = "error"
-            job["error"] = str(e)
-            job["message"] = f"Flight search interrupted: {e}"
-            await _notify(job_id, {
-                "type": "error",
-                "message": f"Flight search interrupted: {e}",
-            })
-            return
+                # Wait before retrying, with increasing backoff
+                backoff = min(5 * retry_count, 15)
+                retry_msg = (
+                    f"Search hit an error at deal {deals_processed}/{total}. "
+                    f"Retrying in {backoff}s (attempt {retry_count}/{MAX_RETRIES})..."
+                )
+                job["message"] = retry_msg
+                logger.info(retry_msg)
+                await _notify(job_id, {
+                    "type": "status",
+                    "step": "flights",
+                    "message": retry_msg,
+                })
+                await asyncio.sleep(backoff)
 
         # ── Step 6: Sort and complete ─────────────────────────
         job["results"].sort(key=lambda x: x.get("total_price_gbp") or 9999)
