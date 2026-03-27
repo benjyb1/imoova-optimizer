@@ -33,7 +33,11 @@ function defaultLatestReturn(): string {
 }
 
 export default function SearchForm({ onSearch }: SearchFormProps) {
-  const [city, setCity] = useState<City | null>(null);
+  const [city, setCity] = useState<City | null>({
+    name: "London",
+    country: "United Kingdom",
+    airports: ["STN", "LGW", "LHR", "LTN"],
+  });
   const [showOptions, setShowOptions] = useState(false);
   const [minDays, setMinDays] = useState(5);
   const [maxDays, setMaxDays] = useState(10);
