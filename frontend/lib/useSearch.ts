@@ -74,6 +74,18 @@ export function useSearch() {
           }
           break;
 
+        case "update":
+          // Server has enriched a deal with flight data — replace it in place
+          setResults((prev) => {
+            if (msg.index >= 0 && msg.index < prev.length) {
+              const next = [...prev];
+              next[msg.index] = msg.deal;
+              return next;
+            }
+            return prev;
+          });
+          break;
+
         case "complete":
           intentionalClose.current = true;
           setState("complete");

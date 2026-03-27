@@ -460,15 +460,19 @@ def _filter_by_departure_time(
     max_hour: int,
 ) -> List[FlightResult]:
     """
-    Filter flights to those departing between min_hour and max_hour (inclusive).
-    This is a HARD filter: flights with unparseable departure times are excluded.
+    Prefer flights departing between min_hour and max_hour (inclusive),
+    but fall back to ALL flights if filtering would leave nothing.
+    Flights with unparseable departure times are always kept.
     """
-    filtered = []
+    preferred = []
     for f in flights:
         hour = _parse_departure_hour(f.departure_time)
-        if hour is not None and min_hour <= hour <= max_hour:
-            filtered.append(f)
-    return filtered
+        if hour is None or (min_hour <= hour <= max_hour):
+            preferred.append(f)
+
+    # If we found at least one flight in the preferred window, use those.
+    # Otherwise return all flights — a badly-timed flight is better than none.
+    return preferred if preferred else flights
 
 
 async def _search_multi_airport(
@@ -694,6 +698,14 @@ async def search_flights_for_deal(
 
     # Iterate pickup dates and find the pair with the lowest total cost.
     # Each pickup date P uniquely determines the dropoff date P + drive_days.
+    #
+    # If one leg is missing for a given date, we still consider the pair
+    # using the cheapest flight available on ANY date for the missing leg.
+    # This way a cheap outbound on Monday isn't thrown away just because
+    # Tuesday's return is missing.
+    cheapest_out_any = min(outbound_flights, key=lambda f: f.price_gbp) if outbound_flights else None
+    cheapest_ret_any = min(return_flights, key=lambda f: f.price_gbp) if return_flights else None
+
     best_total = float("inf")
     for pickup_d in pickup_dates:
         out_key = pickup_d.isoformat()
@@ -709,7 +721,10 @@ async def search_flights_for_deal(
         else:
             out_f = out_by_date.get(out_key)
             if not out_f:
-                continue  # no outbound flight for this date — skip
+                # Fall back to cheapest outbound on any date
+                out_f = cheapest_out_any
+            if not out_f:
+                continue
             out_cost = out_f.price_gbp
             out_flight = out_f
 
@@ -723,7 +738,10 @@ async def search_flights_for_deal(
         else:
             ret_f = ret_by_date.get(ret_key)
             if not ret_f:
-                continue  # no return flight for this date — skip
+                # Fall back to cheapest return on any date
+                ret_f = cheapest_ret_any
+            if not ret_f:
+                continue
             ret_cost = ret_f.price_gbp
             ret_flight = ret_f
 

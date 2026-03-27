@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import List
+from typing import Dict, List
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -191,6 +191,8 @@ async def websocket_job(ws: WebSocket, job_id: str) -> None:
     last_message = ""
     last_searched_deals = 0
     last_results_sent = 0
+    # Track which version of each result was last sent
+    sent_versions: Dict[int, int] = {}  # index -> version
     ping_counter = 0
 
     try:
@@ -238,13 +240,31 @@ async def websocket_job(ws: WebSocket, job_id: str) -> None:
                     last_searched_deals = searched_deals
                     sent_something = True
 
-            # Send new results as they arrive
+            # Send new skeleton results as they arrive
             all_results = job.get("results", [])
+            result_versions = job.get("result_versions", [])
             if len(all_results) > last_results_sent:
-                for enriched in all_results[last_results_sent:]:
-                    await ws.send_json({"type": "result", "deal": enriched})
+                for idx in range(last_results_sent, len(all_results)):
+                    await ws.send_json({
+                        "type": "result",
+                        "deal": all_results[idx],
+                        "index": idx,
+                    })
+                    sent_versions[idx] = result_versions[idx] if idx < len(result_versions) else 0
                 last_results_sent = len(all_results)
                 sent_something = True
+
+            # Send updates for results that have been enriched with flight data
+            for idx in range(min(last_results_sent, len(all_results))):
+                current_ver = result_versions[idx] if idx < len(result_versions) else 0
+                if sent_versions.get(idx, 0) < current_ver:
+                    await ws.send_json({
+                        "type": "update",
+                        "index": idx,
+                        "deal": all_results[idx],
+                    })
+                    sent_versions[idx] = current_ver
+                    sent_something = True
 
             # Send completion
             if status == "complete":

@@ -89,6 +89,13 @@ export interface WSProgressMessage {
 export interface WSResultMessage {
   type: "result";
   deal: EnrichedDeal;
+  index?: number;
+}
+
+export interface WSUpdateMessage {
+  type: "update";
+  index: number;
+  deal: EnrichedDeal;
 }
 
 export interface WSCompleteMessage {
@@ -110,6 +117,7 @@ export type WSMessage =
   | WSStatusMessage
   | WSProgressMessage
   | WSResultMessage
+  | WSUpdateMessage
   | WSCompleteMessage
   | WSErrorMessage
   | WSPingMessage;

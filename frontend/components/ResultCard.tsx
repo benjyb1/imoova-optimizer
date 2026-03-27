@@ -40,7 +40,7 @@ function FlightLine({
     return (
       <div className="flex items-center gap-2 text-sm text-text-muted/60 italic">
         <span>&#x2708;&#xFE0F;</span>
-        <span>Flight price unavailable</span>
+        <span className="animate-pulse">Searching flights...</span>
       </div>
     );
   }
@@ -89,13 +89,15 @@ export default function ResultCard({ deal, numPeople = 1 }: ResultCardProps) {
   return (
     <div
       className={`relative rounded-xl border bg-white p-5 shadow-sm transition-all hover:shadow-md ${
-        isIncomplete ? "opacity-50 border-slate-200" : "border-slate-200"
+        isIncomplete ? "border-slate-200 border-dashed" : "border-slate-200"
       }`}
     >
       {/* Total price badge */}
-      <div className="absolute -right-2 -top-2 rounded-xl bg-accent px-3 py-1.5 text-lg font-bold text-white shadow-md">
+      <div className={`absolute -right-2 -top-2 rounded-xl px-3 py-1.5 text-lg font-bold text-white shadow-md ${
+        isIncomplete ? "bg-slate-400 animate-pulse" : "bg-accent"
+      }`}>
         {isIncomplete ? (
-          <span className="text-sm font-normal">N/A</span>
+          <span className="text-sm font-normal">...</span>
         ) : (
           <span>
             &pound;{perPersonPrice}

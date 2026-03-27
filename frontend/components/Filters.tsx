@@ -24,7 +24,7 @@ export function getDefaultFilters(): FilterState {
     sort: "price",
     excludedCountries: new Set(),
     maxPrice: 500,
-    showIncomplete: false,
+    showIncomplete: true,
   };
 }
 
