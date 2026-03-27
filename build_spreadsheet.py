@@ -86,7 +86,8 @@ COLUMNS = [
     "Complete?",
     "Warnings",
     "Imoova Link",
-    "Google Flights Link",
+    "Outbound Flight Link",
+    "Return Flight Link",
 ]
 
 
@@ -121,10 +122,10 @@ def _build_all_options(ws, deals: list[dict], is_top10: bool = False):
             uk_detail += ret_uk.get("details", "")
             uk_cost += ret_uk.get("price_gbp", 0)
 
-        # Google Flights deeplink for the outbound leg
-        gf_link = ""
+        # Google Flights deeplinks — one-way outbound TO pickup, one-way return FROM dropoff
+        gf_outbound_link = ""
         if ob:
-            gf_link = _google_flights_link(
+            gf_outbound_link = _google_flights_link(
                 ob.get("departure_airport", ""),
                 ob.get("arrival_airport", ""),
                 ob.get("search_date", deal["depart_date"]),
@@ -132,7 +133,19 @@ def _build_all_options(ws, deals: list[dict], is_top10: bool = False):
         elif not config.is_london(deal["pickup_city"]):
             pickup_airports = config.get_airports_for_city(deal["pickup_city"])
             if pickup_airports:
-                gf_link = _google_flights_link("LON", pickup_airports[0], deal["depart_date"])
+                gf_outbound_link = _google_flights_link("LON", pickup_airports[0], deal["depart_date"])
+
+        gf_return_link = ""
+        if ret:
+            gf_return_link = _google_flights_link(
+                ret.get("departure_airport", ""),
+                ret.get("arrival_airport", ""),
+                ret.get("search_date", deal["deliver_date"]),
+            )
+        elif not config.is_london(deal["dropoff_city"]):
+            dropoff_airports = config.get_airports_for_city(deal["dropoff_city"])
+            if dropoff_airports:
+                gf_return_link = _google_flights_link(dropoff_airports[0], "LON", deal["deliver_date"])
 
         drive_hours = config.estimate_driving_hours(deal["pickup_city"], deal["dropoff_city"])
 
@@ -159,7 +172,8 @@ def _build_all_options(ws, deals: list[dict], is_top10: bool = False):
             "Yes" if item.get("is_complete") else "No",
             "; ".join(item.get("warnings", [])),
             deal.get("deal_url", ""),
-            gf_link,
+            gf_outbound_link,
+            gf_return_link,
         ]
 
         for col_idx, value in enumerate(values, 1):
@@ -188,10 +202,15 @@ def _build_all_options(ws, deals: list[dict], is_top10: bool = False):
             link_cell.hyperlink = deal_url
             link_cell.font = LINK_FONT
 
-        if gf_link:
-            gf_cell = ws.cell(row=row_idx, column=COLUMNS.index("Google Flights Link") + 1)
-            gf_cell.hyperlink = gf_link
-            gf_cell.font = LINK_FONT
+        if gf_outbound_link:
+            gf_out_cell = ws.cell(row=row_idx, column=COLUMNS.index("Outbound Flight Link") + 1)
+            gf_out_cell.hyperlink = gf_outbound_link
+            gf_out_cell.font = LINK_FONT
+
+        if gf_return_link:
+            gf_ret_cell = ws.cell(row=row_idx, column=COLUMNS.index("Return Flight Link") + 1)
+            gf_ret_cell.hyperlink = gf_return_link
+            gf_ret_cell.font = LINK_FONT
 
         # Estimate styling
         if ob_uk and ob_uk.get("is_estimate"):

@@ -178,10 +178,21 @@ export default function ResultCard({ deal, numPeople = 1 }: ResultCardProps) {
             href={deal.google_flights_outbound_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex-1 rounded-lg border border-primary px-3 py-2 text-center text-sm
+            className="rounded-lg border border-primary px-3 py-2 text-center text-xs
               font-medium text-primary transition-colors hover:bg-primary/5"
           >
-            Check Flights
+            ✈️ To {info.pickup_city}
+          </a>
+        )}
+        {deal.google_flights_return_url && (
+          <a
+            href={deal.google_flights_return_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-lg border border-primary px-3 py-2 text-center text-xs
+              font-medium text-primary transition-colors hover:bg-primary/5"
+          >
+            ✈️ From {info.dropoff_city}
           </a>
         )}
       </div>
