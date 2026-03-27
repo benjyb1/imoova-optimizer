@@ -770,7 +770,7 @@ async def search_flights_for_deal(
             return None
         return (
             f"https://www.google.com/travel/flights?q="
-            f"Flights+from+{from_apts[0]}+to+{to_apts[0]}+on+{d}"
+            f"Flights+from+{from_apts[0]}+to+{to_apts[0]}+on+{d}+one+way"
         )
 
     pickup_airports = config.get_airports_for_city(pickup_city) or []

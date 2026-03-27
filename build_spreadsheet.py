@@ -343,7 +343,7 @@ def _google_flights_link(from_code: str, to_code: str, travel_date: str) -> str:
     """Build a Google Flights deeplink for manual verification."""
     return (
         f"https://www.google.com/travel/flights?q="
-        f"Flights+from+{from_code}+to+{to_code}+on+{travel_date}"
+        f"Flights+from+{from_code}+to+{to_code}+on+{travel_date}+one+way"
     )
 
 
