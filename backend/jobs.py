@@ -22,7 +22,6 @@ from models import SearchRequest
 from scraper import scrape_all_deals, filter_deals, ScrapingError
 from flights import (
     search_flights_for_deal,
-    presearch_unique_routes,
     close_browser,
 )
 
@@ -44,8 +43,6 @@ def create_job(request: SearchRequest) -> str:
         "message": "Queued",
         "total_deals": 0,
         "searched_deals": 0,
-        "total_routes": 0,
-        "searched_routes": 0,
         "results": [],
         "complete_results": 0,
         "created_at": time.time(),
@@ -217,7 +214,10 @@ async def run_job(job_id: str) -> None:
             })
             return
 
-        # ── Step 4: Pre-search unique flight routes ───────────
+        # ── Step 4: Search flights & enrich each deal ─────────
+        # Each deal is processed end-to-end (flight search + enrichment)
+        # and streamed to the frontend immediately. The flight cache
+        # ensures that shared routes across deals are only searched once.
         job["status"] = "searching"
         job["message"] = "Searching flights..."
         await _notify(job_id, {
@@ -227,32 +227,9 @@ async def run_job(job_id: str) -> None:
         })
 
         search_start = time.time()
-
-        async def on_route_progress(searched: int, total: int) -> None:
-            elapsed = time.time() - search_start
-            if searched > 0:
-                per_route = elapsed / searched
-                remaining = (total - searched) * per_route
-            else:
-                remaining = 0
-
-            job["searched_routes"] = searched
-            job["total_routes"] = total
-            await _notify(job_id, {
-                "type": "progress",
-                "step": "flights",
-                "searched": searched,
-                "total": total,
-                "eta_seconds": round(remaining, 1),
-            })
+        total = len(filtered)
 
         try:
-            await presearch_unique_routes(
-                filtered, request.home_city, home_airports, earliest, latest, on_route_progress
-            )
-
-            # ── Step 5: Enrich each deal ──────────────────────────
-            total = len(filtered)
             for i, deal in enumerate(filtered, 1):
                 try:
                     enriched = await search_flights_for_deal(
@@ -266,9 +243,26 @@ async def run_job(job_id: str) -> None:
 
                     job["searched_deals"] = i
 
+                    # Send the result immediately
                     await _notify(job_id, {
                         "type": "result",
                         "deal": enriched,
+                    })
+
+                    # Update progress bar
+                    elapsed = time.time() - search_start
+                    if i > 0:
+                        per_deal = elapsed / i
+                        remaining = (total - i) * per_deal
+                    else:
+                        remaining = 0
+
+                    await _notify(job_id, {
+                        "type": "progress",
+                        "step": "flights",
+                        "searched": i,
+                        "total": total,
+                        "eta_seconds": round(remaining, 1),
                     })
 
                 except Exception as e:

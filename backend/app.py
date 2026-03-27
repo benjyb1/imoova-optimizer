@@ -189,7 +189,7 @@ async def websocket_job(ws: WebSocket, job_id: str) -> None:
 
     last_status = ""
     last_message = ""
-    last_searched_routes = 0
+    last_searched_deals = 0
     last_results_sent = 0
     ping_counter = 0
 
@@ -225,17 +225,17 @@ async def websocket_job(ws: WebSocket, job_id: str) -> None:
 
             # Send flight search progress
             if status == "searching":
-                searched_routes = job.get("searched_routes", 0)
-                total_routes = job.get("total_routes", 0)
-                if searched_routes != last_searched_routes and total_routes > 0:
+                searched_deals = job.get("searched_deals", 0)
+                total_deals = job.get("total_deals", 0)
+                if searched_deals != last_searched_deals and total_deals > 0:
                     await ws.send_json({
                         "type": "progress",
                         "step": "flights",
-                        "searched": searched_routes,
-                        "total": total_routes,
+                        "searched": searched_deals,
+                        "total": total_deals,
                         "eta_seconds": 0,
                     })
-                    last_searched_routes = searched_routes
+                    last_searched_deals = searched_deals
                     sent_something = True
 
             # Send new results as they arrive

@@ -89,7 +89,7 @@ export default function ProgressView({ progress, results, numPeople = 1 }: Progr
             </div>
             <div className="mt-1.5 flex justify-between text-xs text-text-muted">
               <span>
-                {progress.searched} / {progress.total} routes searched
+                {progress.searched} / {progress.total} deals searched
               </span>
               {progress.etaSeconds > 0 && (
                 <span>{formatEta(progress.etaSeconds)}</span>

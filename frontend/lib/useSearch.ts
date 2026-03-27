@@ -58,7 +58,7 @@ export function useSearch() {
         case "progress":
           setProgress({
             step: msg.step,
-            message: `Searching flights... (${msg.searched}/${msg.total})`,
+            message: `Searching deals... (${msg.searched}/${msg.total})`,
             searched: msg.searched,
             total: msg.total,
             etaSeconds: msg.eta_seconds,
