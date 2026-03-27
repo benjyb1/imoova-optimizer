@@ -246,58 +246,74 @@ async def run_job(job_id: str) -> None:
                 "eta_seconds": round(remaining, 1),
             })
 
-        await presearch_unique_routes(
-            filtered, request.home_city, home_airports, earliest, latest, on_route_progress
-        )
+        try:
+            await presearch_unique_routes(
+                filtered, request.home_city, home_airports, earliest, latest, on_route_progress
+            )
 
-        # ── Step 5: Enrich each deal ──────────────────────────
-        total = len(filtered)
-        for i, deal in enumerate(filtered, 1):
-            try:
-                enriched = await search_flights_for_deal(
-                    deal, request.home_city, home_airports,
-                    earliest, latest,
-                )
-                job["results"].append(enriched)
-                if enriched.get("is_complete"):
-                    job["complete_results"] += 1
+            # ── Step 5: Enrich each deal ──────────────────────────
+            total = len(filtered)
+            for i, deal in enumerate(filtered, 1):
+                try:
+                    enriched = await search_flights_for_deal(
+                        deal, request.home_city, home_airports,
+                        earliest, latest,
+                    )
+                    job["results"].append(enriched)
+                    job["results"].sort(key=lambda x: x.get("total_price_gbp") or 9999)
+                    if enriched.get("is_complete"):
+                        job["complete_results"] += 1
 
-                job["searched_deals"] = i
+                    job["searched_deals"] = i
 
-                await _notify(job_id, {
-                    "type": "result",
-                    "deal": enriched,
-                })
+                    await _notify(job_id, {
+                        "type": "result",
+                        "deal": enriched,
+                    })
 
-            except Exception as e:
-                logger.warning("Error enriching deal %s: %s", deal.get("ref", "?"), e)
-                error_deal = {
-                    "deal": {
-                        "pickup_city": deal.get("pickup_city", ""),
-                        "pickup_country": config.CITY_COUNTRIES.get(deal.get("pickup_city", ""), ""),
-                        "dropoff_city": deal.get("dropoff_city", ""),
-                        "dropoff_country": config.CITY_COUNTRIES.get(deal.get("dropoff_city", ""), ""),
-                        "pickup_date": deal.get("depart_date", ""),
-                        "dropoff_date": deal.get("deliver_date", ""),
-                        "drive_days": deal.get("drive_days", 0),
-                        "vehicle_type": deal.get("vehicle", ""),
-                        "seats": deal.get("seats", 0),
-                        "imoova_price_gbp": deal.get("rate_gbp", 0),
-                        "imoova_url": deal.get("deal_url", ""),
-                    },
-                    "drive_hours": None,
-                    "outbound_flight": None,
-                    "return_flight": None,
-                    "outbound_is_home": False,
-                    "return_is_home": False,
-                    "total_price_gbp": None,
-                    "google_flights_outbound_url": None,
-                    "google_flights_return_url": None,
-                    "is_complete": False,
-                    "warnings": [f"Search failed: {e}"],
-                }
-                job["results"].append(error_deal)
-                job["searched_deals"] = i
+                except Exception as e:
+                    logger.warning("Error enriching deal %s: %s", deal.get("ref", "?"), e)
+                    error_deal = {
+                        "deal": {
+                            "pickup_city": deal.get("pickup_city", ""),
+                            "pickup_country": config.CITY_COUNTRIES.get(deal.get("pickup_city", ""), ""),
+                            "dropoff_city": deal.get("dropoff_city", ""),
+                            "dropoff_country": config.CITY_COUNTRIES.get(deal.get("dropoff_city", ""), ""),
+                            "pickup_date": deal.get("depart_date", ""),
+                            "dropoff_date": deal.get("deliver_date", ""),
+                            "drive_days": deal.get("drive_days", 0),
+                            "vehicle_type": deal.get("vehicle", ""),
+                            "seats": deal.get("seats", 0),
+                            "imoova_price_gbp": deal.get("rate_gbp", 0),
+                            "imoova_url": deal.get("deal_url", ""),
+                        },
+                        "drive_hours": None,
+                        "outbound_flight": None,
+                        "return_flight": None,
+                        "outbound_is_home": False,
+                        "return_is_home": False,
+                        "total_price_gbp": None,
+                        "google_flights_outbound_url": None,
+                        "google_flights_return_url": None,
+                        "is_complete": False,
+                        "warnings": [f"Search failed: {e}"],
+                    }
+                    job["results"].append(error_deal)
+                    job["searched_deals"] = i
+
+        except Exception as e:
+            # Flight search crashed (rate limit, browser crash, etc.)
+            # Sort whatever we have so far and send error
+            logger.error("Flight search crashed for job %s: %s", job_id, e, exc_info=True)
+            job["results"].sort(key=lambda x: x.get("total_price_gbp") or 9999)
+            job["status"] = "error"
+            job["error"] = str(e)
+            job["message"] = f"Flight search interrupted: {e}"
+            await _notify(job_id, {
+                "type": "error",
+                "message": f"Flight search interrupted: {e}",
+            })
+            return
 
         # ── Step 6: Sort and complete ─────────────────────────
         job["results"].sort(key=lambda x: x.get("total_price_gbp") or 9999)
@@ -314,9 +330,8 @@ async def run_job(job_id: str) -> None:
         job["error"] = str(e)
         job["message"] = f"Scraping failed: {e}"
         await _notify(job_id, {
-            "type": "status",
-            "step": "error",
-            "message": job["message"],
+            "type": "error",
+            "message": f"Scraping failed: {e}",
         })
         logger.error("Scraping error for job %s: %s", job_id, e)
 
@@ -326,13 +341,11 @@ async def run_job(job_id: str) -> None:
         logger.error("Unexpected error for job %s:\n%s", job_id, tb)
         job["status"] = "error"
         job["error"] = str(e)
-        job["message"] = f"Unexpected error: {e}\n{tb[-500:]}"
+        job["message"] = f"Unexpected error: {e}"
         await _notify(job_id, {
-            "type": "status",
-            "step": "error",
-            "message": job["message"],
+            "type": "error",
+            "message": f"Unexpected error: {e}",
         })
-        logger.error("Unexpected error for job %s: %s", job_id, e, exc_info=True)
 
     finally:
         keep_alive_task.cancel()

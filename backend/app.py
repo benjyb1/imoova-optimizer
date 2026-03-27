@@ -208,8 +208,7 @@ async def websocket_job(ws: WebSocket, job_id: str) -> None:
             if status != last_status or message != last_message:
                 if status == "error":
                     await ws.send_json({
-                        "type": "status",
-                        "step": "error",
+                        "type": "error",
                         "message": message,
                     })
                     break

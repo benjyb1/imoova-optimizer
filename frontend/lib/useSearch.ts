@@ -32,6 +32,8 @@ export function useSearch() {
   // duplicates when the server re-sends from the start
   const resultsBeforeReconnect = useRef(0);
   const resultsSeen = useRef(0);
+  // Store last search params for retry
+  const lastParamsRef = useRef<SearchRequest | null>(null);
 
   function connectWebSocket(jobId: string) {
     const wsUrl = getWebSocketUrl(jobId);
@@ -83,7 +85,15 @@ export function useSearch() {
         case "error":
           intentionalClose.current = true;
           setError(msg.message);
-          setState("error");
+          // If we already have results, keep them visible with error_partial
+          setResults((prev) => {
+            if (prev.length > 0) {
+              setState("error_partial");
+            } else {
+              setState("error");
+            }
+            return prev;
+          });
           ws.close();
           wsRef.current = null;
           jobIdRef.current = null;
@@ -129,8 +139,17 @@ export function useSearch() {
           }
         }, RECONNECT_DELAY_MS);
       } else {
-        setError("Connection lost after multiple retries. Your partial results have been saved.");
-        setState("error");
+        // Connection lost permanently — keep partial results if we have them
+        setResults((prev) => {
+          if (prev.length > 0) {
+            setError("Connection lost. Your partial results are shown below.");
+            setState("error_partial");
+          } else {
+            setError("Connection lost after multiple retries. Your partial results have been saved.");
+            setState("error");
+          }
+          return prev;
+        });
         jobIdRef.current = null;
       }
     };
@@ -160,6 +179,7 @@ export function useSearch() {
         wsRef.current = null;
       }
 
+      lastParamsRef.current = params;
       setState("searching");
       setResults([]);
       setError(null);
@@ -189,5 +209,55 @@ export function useSearch() {
     []
   );
 
-  return { state, progress, results, error, startSearch, reset };
+  // Retry: start a new search with same params, keeping existing results visible
+  const retrySearch = useCallback(async () => {
+    const params = lastParamsRef.current;
+    if (!params) return;
+
+    // Clean up any existing connection
+    intentionalClose.current = true;
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    setState("searching");
+    setError(null);
+    reconnectAttempts.current = 0;
+    // Keep existing results — don't clear them
+    // Set resultsBeforeReconnect so we skip duplicates
+    setResults((prev) => {
+      resultsBeforeReconnect.current = 0;
+      resultsSeen.current = 0;
+      return prev;
+    });
+    intentionalClose.current = false;
+    setProgress({
+      step: "starting",
+      message: "Retrying search...",
+      searched: 0,
+      total: 0,
+      etaSeconds: 0,
+    });
+
+    try {
+      const { job_id } = await createSearch(params);
+      jobIdRef.current = job_id;
+      connectWebSocket(job_id);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to start search"
+      );
+      setResults((prev) => {
+        if (prev.length > 0) {
+          setState("error_partial");
+        } else {
+          setState("error");
+        }
+        return prev;
+      });
+    }
+  }, []);
+
+  return { state, progress, results, error, startSearch, retrySearch, reset };
 }

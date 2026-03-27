@@ -17,7 +17,7 @@ import {
 } from "@/lib/searchHistory";
 
 export default function Home() {
-  const { state, progress, results, error, startSearch, reset } = useSearch();
+  const { state, progress, results, error, startSearch, retrySearch, reset } = useSearch();
 
   // Sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -73,6 +73,13 @@ export default function Home() {
       clearInProgress();
       setSearchHistory(loadSearchHistory());
       setActiveHistoryId(saved.id);
+    }
+  }, [state, results, currentRequest]);
+
+  // Save partial results on error_partial too
+  useEffect(() => {
+    if (state === "error_partial" && currentRequest && results.length > 0) {
+      saveInProgress(currentRequest, results);
     }
   }, [state, results, currentRequest]);
 
@@ -132,6 +139,10 @@ export default function Home() {
     refreshSearch.startSearch(request);
   }, [pastRequest, currentRequest, isRefreshing, refreshSearch.startSearch, viewingPastSearch, state, results]);
 
+  const handleRetry = useCallback(() => {
+    retrySearch();
+  }, [retrySearch]);
+
   const handleReset = () => {
     reset();
     setViewingPastSearch(false);
@@ -143,10 +154,25 @@ export default function Home() {
 
   const numPeople = currentRequest?.num_people ?? pastRequest?.num_people ?? 1;
 
-  // What to show in the main area
+  // Determine what to show
   const showIdle = state === "idle" && !viewingPastSearch;
-  const showSearching = state === "searching" && !viewingPastSearch;
-  const showResults = (state === "complete" && !viewingPastSearch) || viewingPastSearch;
+
+  // Show progress view only during scraping/filtering (before flight results start)
+  const isPreFlightPhase = state === "searching" &&
+    !viewingPastSearch &&
+    progress.step !== "flights" &&
+    results.length === 0;
+
+  // Show results when: streaming flights, complete, error with partial results, or viewing past search
+  const isStreaming = state === "searching" && !viewingPastSearch;
+  const hasStreamingResults = isStreaming && (progress.step === "flights" || results.length > 0);
+  const showResults =
+    hasStreamingResults ||
+    (state === "complete" && !viewingPastSearch) ||
+    (state === "error_partial" && !viewingPastSearch) ||
+    viewingPastSearch;
+
+  // Only show full error page when there are zero results
   const showError = state === "error" && !viewingPastSearch;
 
   const displayResults = viewingPastSearch ? pastResults : results;
@@ -176,12 +202,12 @@ export default function Home() {
             </div>
           )}
 
-          {/* Searching state */}
-          {showSearching && (
+          {/* Pre-flight searching state (scraping/filtering) */}
+          {isPreFlightPhase && (
             <ProgressView progress={progress} results={results} numPeople={numPeople} />
           )}
 
-          {/* Results state (live or past search) */}
+          {/* Results state (streaming, complete, error_partial, or past search) */}
           {showResults && (
             <ResultsList
               results={displayResults}
@@ -194,10 +220,19 @@ export default function Home() {
                   : undefined
               }
               onRefresh={handleRefresh}
+              isStreaming={hasStreamingResults}
+              streamProgress={
+                hasStreamingResults
+                  ? { searched: progress.searched, total: progress.total, etaSeconds: progress.etaSeconds }
+                  : undefined
+              }
+              hasError={state === "error_partial"}
+              errorMessage={error}
+              onRetry={handleRetry}
             />
           )}
 
-          {/* Error state */}
+          {/* Error state (no results at all) */}
           {showError && (
             <div className="mx-auto max-w-md space-y-4 text-center">
               <div className="rounded-xl border border-red-200 bg-red-50 p-6">

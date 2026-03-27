@@ -116,7 +116,7 @@ export type WSMessage =
 
 // ── Search state machine ─────────────────────────────────────
 
-export type SearchState = "idle" | "searching" | "complete" | "error";
+export type SearchState = "idle" | "searching" | "complete" | "error" | "error_partial";
 
 export interface SearchProgress {
   step: string;
